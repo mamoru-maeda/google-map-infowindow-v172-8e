@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { SidebarProvider } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Toaster } from "@/components/ui/toaster"
+import { SidebarToggle } from "@/components/sidebar-toggle"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -26,7 +27,10 @@ export default function RootLayout({
           <SidebarProvider>
             <div className="flex h-screen overflow-hidden">
               <AppSidebar />
-              <div className="flex-1 overflow-auto">{children}</div>
+              <div className="flex-1 overflow-auto">
+                <SidebarToggle />
+                {children}
+              </div>
             </div>
           </SidebarProvider>
           <Toaster />

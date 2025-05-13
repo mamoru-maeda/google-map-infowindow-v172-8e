@@ -1,12 +1,16 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { Menu } from "lucide-react"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import { useSidebar } from "@/components/ui/sidebar"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 export function SidebarToggle() {
-  const { toggleSidebar } = useSidebar()
+  const { isOpen, setIsOpen } = useSidebar()
+
+  const toggleSidebar = () => {
+    setIsOpen(!isOpen)
+  }
 
   return (
     <div className="fixed top-4 left-4 z-50">
@@ -16,16 +20,16 @@ export function SidebarToggle() {
             <Button
               variant="outline"
               size="icon"
-              className="h-10 w-10 rounded-full bg-white shadow-md dark:bg-gray-950"
+              className="h-10 w-10 rounded-full bg-white shadow-md dark:bg-gray-950 transition-all duration-300"
               onClick={toggleSidebar}
-              aria-label="メニューを切り替え"
+              aria-label={isOpen ? "メニューを閉じる" : "メニューを開く"}
             >
-              <Menu className="h-5 w-5" />
-              <span className="sr-only">メニューを切り替え</span>
+              {isOpen ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+              <span className="sr-only">{isOpen ? "メニューを閉じる" : "メニューを開く"}</span>
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            <p>メニューを切り替え</p>
+            <p>{isOpen ? "メニューを閉じる" : "メニューを開く"}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

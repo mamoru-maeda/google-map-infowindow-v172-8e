@@ -1,7 +1,6 @@
 "use client"
-
-import { Button } from "@/components/ui/button"
 import { PanelLeft, PanelRight } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { useSidebar } from "@/components/ui/sidebar"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
@@ -13,30 +12,25 @@ export function SidebarToggle() {
   }
 
   return (
-    <div className="fixed top-4 left-4 z-50">
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-10 w-10 rounded-full bg-white shadow-md dark:bg-gray-950 transition-all duration-300"
-              onClick={toggleSidebar}
-              aria-label={isOpen ? "メニューを閉じる" : "メニューを開く"}
-            >
-              {isOpen ? (
-                <PanelLeft className="h-5 w-5 text-blue-600" />
-              ) : (
-                <PanelRight className="h-5 w-5 text-blue-600" />
-              )}
-              <span className="sr-only">{isOpen ? "メニューを閉じる" : "メニューを開く"}</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            <p>{isOpen ? "メニューを閉じる" : "メニューを開く"}</p>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </div>
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="fixed top-4 left-4 z-50 bg-white/80 backdrop-blur-sm shadow-sm border rounded-full w-10 h-10 transition-all duration-300 hover:bg-blue-100"
+            onClick={toggleSidebar}
+            aria-label={isOpen ? "サイドバーを閉じる" : "サイドバーを開く"}
+          >
+            {isOpen ? (
+              <PanelLeft className="h-5 w-5 text-blue-600" />
+            ) : (
+              <PanelRight className="h-5 w-5 text-blue-600" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="right">{isOpen ? "サイドバーを閉じる" : "サイドバーを開く"}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }

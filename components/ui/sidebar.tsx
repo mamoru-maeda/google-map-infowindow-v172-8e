@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, type ReactNode } from "react"
+import React, { createContext, useContext, useState, type ReactNode, useEffect } from "react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -22,7 +22,21 @@ const useSidebar = (): SidebarContextType => {
 }
 
 const SidebarProvider = ({ children }: { children: ReactNode }) => {
-  const [isOpen, setIsOpen] = useState(false)
+  // 初期値をtrueに変更して、初期表示時にサイドバーを表示する
+  const [isOpen, setIsOpen] = useState(true)
+
+  // ローカルストレージからサイドバーの状態を復元する
+  useEffect(() => {
+    const savedState = localStorage.getItem("sidebar-state")
+    if (savedState !== null) {
+      setIsOpen(savedState === "true")
+    }
+  }, [])
+
+  // サイドバーの状態が変更されたときにローカルストレージに保存する
+  useEffect(() => {
+    localStorage.setItem("sidebar-state", isOpen.toString())
+  }, [isOpen])
 
   return <SidebarContext.Provider value={{ isOpen, setIsOpen }}>{children}</SidebarContext.Provider>
 }
@@ -36,8 +50,8 @@ const Sidebar = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
       <div
         ref={ref}
         className={cn(
-          "bg-secondary border-r border-secondary-foreground/10 fixed inset-y-0 left-0 z-50 flex h-screen w-64 flex-col p-4",
-          !isOpen && "hidden",
+          "bg-secondary border-r border-secondary-foreground/10 fixed inset-y-0 left-0 z-50 flex h-screen w-64 flex-col p-4 transition-all duration-300",
+          !isOpen && "transform -translate-x-full",
           isMobile && "block",
           className,
         )}

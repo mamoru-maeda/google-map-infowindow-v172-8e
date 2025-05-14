@@ -1,7 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { PanelLeft, PanelRight } from "lucide-react"
 import { useSidebar } from "@/components/ui/sidebar"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
@@ -24,7 +24,11 @@ export function SidebarToggle() {
               onClick={toggleSidebar}
               aria-label={isOpen ? "メニューを閉じる" : "メニューを開く"}
             >
-              {isOpen ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+              {isOpen ? (
+                <PanelLeft className="h-5 w-5 text-blue-600" />
+              ) : (
+                <PanelRight className="h-5 w-5 text-blue-600" />
+              )}
               <span className="sr-only">{isOpen ? "メニューを閉じる" : "メニューを開く"}</span>
             </Button>
           </TooltipTrigger>

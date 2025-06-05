@@ -21,10 +21,18 @@ export default function MapPage() {
       setErrorMessage(event.message || "マップの読み込み中にエラーが発生しました")
     }
 
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error("未処理のPromise拒否:", event.reason)
+      setIsError(true)
+      setErrorMessage("非同期処理でエラーが発生しました")
+    }
+
     window.addEventListener("error", handleError)
+    window.addEventListener("unhandledrejection", handleUnhandledRejection)
 
     return () => {
       window.removeEventListener("error", handleError)
+      window.removeEventListener("unhandledrejection", handleUnhandledRejection)
     }
   }, [])
 
@@ -32,7 +40,14 @@ export default function MapPage() {
   const shizuokaCenterPosition = { lat: 34.95, lng: 138.38 }
 
   // 120個の災害マーカーを生成
-  const disasterMarkers = generateDisasterMarkers()
+  let disasterMarkers = []
+  try {
+    disasterMarkers = generateDisasterMarkers()
+  } catch (error) {
+    console.error("災害マーカーの生成に失敗しました:", error)
+    setIsError(true)
+    setErrorMessage("災害マーカーの生成に失敗しました")
+  }
 
   // エラーが発生した場合はエラーメッセージを表示
   if (isError) {
@@ -55,6 +70,27 @@ export default function MapPage() {
     )
   }
 
+  // クライアントサイドでない場合はローディング表示
+  if (!isClient) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-between p-4">
+        <div className="w-full max-w-none">
+          <h1 className="text-2xl font-bold mb-4">静岡県災害情報マップ</h1>
+          <div className="w-full border rounded-lg overflow-hidden mx-auto" style={{ height: "calc(100vh - 200px)" }}>
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="p-4 bg-white rounded-md shadow-md">
+                <p className="mb-2">ページを読み込み中...</p>
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div className="bg-blue-600 h-2.5 rounded-full animate-pulse" style={{ width: "100%" }}></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-4">
       <div className="w-full max-w-none">
@@ -66,23 +102,12 @@ export default function MapPage() {
         </p>
 
         <div className="w-full border rounded-lg overflow-hidden mx-auto" style={{ height: "calc(100vh - 200px)" }}>
-          {isClient ? (
-            <MapContainer
-              center={shizuokaCenterPosition}
-              zoom={9}
-              markers={disasterMarkers}
-              categories={disasterCategories}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="p-4 bg-white rounded-md shadow-md">
-                <p className="mb-2">地図を読み込み中...</p>
-                <div className="w-full bg-gray-200 rounded-full h-2.5">
-                  <div className="bg-blue-600 h-2.5 rounded-full animate-pulse" style={{ width: "100%" }}></div>
-                </div>
-              </div>
-            </div>
-          )}
+          <MapContainer
+            center={shizuokaCenterPosition}
+            zoom={9}
+            markers={disasterMarkers}
+            categories={disasterCategories}
+          />
         </div>
       </div>
     </main>

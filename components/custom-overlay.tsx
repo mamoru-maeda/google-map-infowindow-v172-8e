@@ -196,19 +196,19 @@ const CustomOverlay: React.FC<CustomOverlayProps> = ({
           return
         }
 
-        // マーカーの上に配置（マーカーの中心から上に配置）
+        // フローティングウィンドウのサイズを取得
         const infoWindowWidth = containerRef.current.offsetWidth
         const infoWindowHeight = containerRef.current.offsetHeight
 
-        // 吹き出しの中心をマーカーの上に配置
+        // フローティングウィンドウの最下部がマーカーの上に来るように配置
         const left = markerPos.x - infoWindowWidth / 2
-        const top = markerPos.y - infoWindowHeight - 10 // マーカーから少し上にオフセット
+        const top = markerPos.y - infoWindowHeight // マーカーの上にフローティングウィンドウの最下部を配置
 
         // 吹き出しの位置を更新
         containerRef.current.style.left = `${left}px`
         containerRef.current.style.top = `${top}px`
 
-        // 吹き出しの中心位置を保存
+        // 吹き出しの中心位置を保存（線の描画用）
         infoWindowPositionRef.current = {
           x: left + infoWindowWidth / 2,
           y: top + infoWindowHeight / 2,

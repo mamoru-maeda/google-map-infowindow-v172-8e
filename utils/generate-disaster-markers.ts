@@ -1,249 +1,80 @@
 import { type DisasterMarker, disasterCategories } from "@/types/disaster-types"
 
-// 静岡県の市町の中心座標と範囲
-const SHIZUOKA_CITIES = [
-  { name: "沼津市", lat: 35.0956, lng: 138.8636, count: 25 },
-  { name: "富士市", lat: 35.1614, lng: 138.6764, count: 25 },
-  { name: "静岡市", lat: 34.9756, lng: 138.3828, count: 20 },
-  { name: "浜松市", lat: 34.7108, lng: 137.7261, count: 20 },
-  { name: "三島市", lat: 35.1186, lng: 138.9189, count: 15 },
-  { name: "下田市", lat: 34.6789, lng: 138.9456, count: 15 },
-]
-
-// 各市町の陸地の座標リスト（実際の陸地の座標を複数定義）
-// より多くの座標を追加し、バランスよく分散させる
-const LAND_COORDINATES = {
-  沼津市: [
-    // 沼津市中心部
-    { lat: 35.0956, lng: 138.8636 }, // 沼津市中心
-    { lat: 35.1056, lng: 138.8536 }, // 沼津駅周辺
-    { lat: 35.0856, lng: 138.8736 }, // 沼津港周辺
-    { lat: 35.1156, lng: 138.8436 }, // 沼津市北部
-    { lat: 35.0756, lng: 138.8836 }, // 沼津市南部
-
-    // 沼津市西部
-    { lat: 35.1023, lng: 138.8312 }, // 沼津市西部
-    { lat: 35.0934, lng: 138.8245 }, // 沼津市西部住宅地
-    { lat: 35.1145, lng: 138.8178 }, // 沼津市北西部
-    { lat: 35.0867, lng: 138.8123 }, // 沼津市南西部
-
-    // 沼津市東部
-    { lat: 35.1087, lng: 138.8912 }, // 沼津市東部
-    { lat: 35.0923, lng: 138.8978 }, // 沼津市東部住宅地
-    { lat: 35.1234, lng: 138.9034 }, // 沼津市北東部
-    { lat: 35.0812, lng: 138.9123 }, // 沼津市南東部
-
-    // 沼津市北部
-    { lat: 35.1345, lng: 138.8567 }, // 沼津市北部住宅地
-    { lat: 35.1423, lng: 138.8712 }, // 沼津市北部商業地
-    { lat: 35.1512, lng: 138.8456 }, // 沼津市北部工業地
-
-    // 沼津市南部
-    { lat: 35.0645, lng: 138.8523 }, // 沼津市南部住宅地
-    { lat: 35.0712, lng: 138.8678 }, // 沼津市南部商業地
-    { lat: 35.0534, lng: 138.8789 }, // 沼津市南部工業地
-
-    // 沼津市内陸部
-    { lat: 35.1123, lng: 138.8345 }, // 沼津市内陸部住宅地
-    { lat: 35.0978, lng: 138.8456 }, // 沼津市内陸部商業地
-    { lat: 35.1234, lng: 138.8567 }, // 沼津市内陸部工業地
-    { lat: 35.0845, lng: 138.8234 }, // 沼津市内陸部公園
-    { lat: 35.1067, lng: 138.8789 }, // 沼津市内陸部学校
-    { lat: 35.0934, lng: 138.8678 }, // 沼津市内陸部病院
-  ],
-  富士市: [
-    // 富士市中心部
-    { lat: 35.1614, lng: 138.6764 }, // 富士市中心
-    { lat: 35.1714, lng: 138.6664 }, // 富士駅周辺
-    { lat: 35.1514, lng: 138.6864 }, // 富士市役所周辺
-    { lat: 35.1814, lng: 138.6564 }, // 富士市北部
-    { lat: 35.1414, lng: 138.6964 }, // 富士市南部
-
-    // 富士市西部
-    { lat: 35.1567, lng: 138.6423 }, // 富士市西部
-    { lat: 35.1678, lng: 138.6345 }, // 富士市西部住宅地
-    { lat: 35.1456, lng: 138.6278 }, // 富士市南西部
-    { lat: 35.1789, lng: 138.6312 }, // 富士市北西部
-
-    // 富士市東部
-    { lat: 35.1645, lng: 138.7123 }, // 富士市東部
-    { lat: 35.1734, lng: 138.7234 }, // 富士市東部住宅地
-    { lat: 35.1523, lng: 138.7345 }, // 富士市南東部
-    { lat: 35.1856, lng: 138.7156 }, // 富士市北東部
-
-    // 富士市北部
-    { lat: 35.1923, lng: 138.6645 }, // 富士市北部住宅地
-    { lat: 35.2034, lng: 138.6734 }, // 富士市北部商業地
-    { lat: 35.1978, lng: 138.6523 }, // 富士市北部工業地
-
-    // 富士市南部
-    { lat: 35.1345, lng: 138.6823 }, // 富士市南部住宅地
-    { lat: 35.1267, lng: 138.6734 }, // 富士市南部商業地
-    { lat: 35.1178, lng: 138.6912 }, // 富士市南部工業地
-
-    // 富士市内陸部
-    { lat: 35.1645, lng: 138.6534 }, // 富士市内陸部住宅地
-    { lat: 35.1734, lng: 138.6645 }, // 富士市内陸部商業地
-    { lat: 35.1567, lng: 138.6734 }, // 富士市内陸部工業地
-    { lat: 35.1823, lng: 138.6823 }, // 富士市内陸部公園
-    { lat: 35.1456, lng: 138.6645 }, // 富士市内陸部学校
-    { lat: 35.1645, lng: 138.6912 }, // 富士市内陸部病院
-  ],
-  静岡市: [
-    // 静岡市中心部
-    { lat: 34.9756, lng: 138.3828 }, // 静岡市中心
-    { lat: 34.9856, lng: 138.3728 }, // 静岡駅周辺
-    { lat: 34.9656, lng: 138.3928 }, // 静岡市役所周辺
-    { lat: 34.9956, lng: 138.3628 }, // 静岡市北部
-    { lat: 34.9556, lng: 138.4028 }, // 静岡市南部
-
-    // 静岡市西部
-    { lat: 34.9723, lng: 138.3523 }, // 静岡市西部
-    { lat: 34.9834, lng: 138.3412 }, // 静岡市西部住宅地
-    { lat: 34.9645, lng: 138.3345 }, // 静岡市南西部
-    { lat: 34.9912, lng: 138.3267 }, // 静岡市北西部
-
-    // 静岡市東部
-    { lat: 34.9734, lng: 138.4123 }, // 静岡市東部
-    { lat: 34.9845, lng: 138.4234 }, // 静岡市東部住宅地
-    { lat: 34.9623, lng: 138.4345 }, // 静岡市南東部
-    { lat: 34.9956, lng: 138.4156 }, // 静岡市北東部
-
-    // 静岡市北部
-    { lat: 35.0123, lng: 138.3845 }, // 静岡市北部住宅地
-    { lat: 35.0234, lng: 138.3734 }, // 静岡市北部商業地
-    { lat: 35.0345, lng: 138.3623 }, // 静岡市北部工業地
-
-    // 静岡市南部
-    { lat: 34.9345, lng: 138.3923 }, // 静岡市南部住宅地
-    { lat: 34.9234, lng: 138.4034 }, // 静岡市南部商業地
-    { lat: 34.9123, lng: 138.4145 }, // 静岡市南部工業地
-
-    // 静岡市内陸部
-    { lat: 34.9845, lng: 138.3634 }, // 静岡市内陸部住宅地
-    { lat: 34.9734, lng: 138.3745 }, // 静岡市内陸部商業地
-    { lat: 34.9623, lng: 138.3856 }, // 静岡市内陸部工業地
-    { lat: 34.9912, lng: 138.3967 }, // 静岡市内陸部公園
-    { lat: 34.9534, lng: 138.4078 }, // 静岡市内陸部学校
-    { lat: 34.9845, lng: 138.4189 }, // 静岡市内陸部病院
-  ],
-  浜松市: [
-    // 浜松市中心部
-    { lat: 34.7108, lng: 137.7261 }, // 浜松市中心
-    { lat: 34.7208, lng: 137.7161 }, // 浜松駅周辺
-    { lat: 34.7008, lng: 137.7361 }, // 浜松市役所周辺
-    { lat: 34.7308, lng: 137.7061 }, // 浜松市北部
-    { lat: 34.6908, lng: 137.7461 }, // 浜松市南部
-
-    // 浜松市西部
-    { lat: 34.7123, lng: 137.6923 }, // 浜松市西部
-    { lat: 34.7234, lng: 137.6812 }, // 浜松市西部住宅地
-    { lat: 34.7045, lng: 137.6745 }, // 浜松市南西部
-    { lat: 34.7312, lng: 137.6667 }, // 浜松市北西部
-
-    // 浜松市東部
-    { lat: 34.7134, lng: 137.7523 }, // 浜松市東部
-    { lat: 34.7245, lng: 137.7634 }, // 浜松市東部住宅地
-    { lat: 34.7023, lng: 137.7745 }, // 浜松市南東部
-    { lat: 34.7356, lng: 137.7556 }, // 浜松市北東部
-
-    // 浜松市北部
-    { lat: 34.7523, lng: 137.7245 }, // 浜松市北部住宅地
-    { lat: 34.7634, lng: 137.7134 }, // 浜松市北部商業地
-    { lat: 34.7745, lng: 137.7023 }, // 浜松市北部工業地
-
-    // 浜松市南部
-    { lat: 34.6745, lng: 137.7323 }, // 浜松市南部住宅地
-    { lat: 34.6634, lng: 137.7434 }, // 浜松市南部商業地
-    { lat: 34.6523, lng: 137.7545 }, // 浜松市南部工業地
-
-    // 浜松市内陸部
-    { lat: 34.7245, lng: 137.7034 }, // 浜松市内陸部住宅地
-    { lat: 34.7134, lng: 137.7145 }, // 浜松市内陸部商業地
-    { lat: 34.7023, lng: 137.7256 }, // 浜松市内陸部工業地
-    { lat: 34.7312, lng: 137.7367 }, // 浜松市内陸部公園
-    { lat: 34.6934, lng: 137.7478 }, // 浜松市内陸部学校
-    { lat: 34.7245, lng: 137.7589 }, // 浜松市内陸部病院
-  ],
-  三島市: [
-    // 三島市中心部
-    { lat: 35.1186, lng: 138.9189 }, // 三島市中心
-    { lat: 35.1286, lng: 138.9089 }, // 三島駅周辺
-    { lat: 35.1086, lng: 138.9289 }, // 三島市役所周辺
-    { lat: 35.1386, lng: 138.8989 }, // 三島市北部
-    { lat: 35.0986, lng: 138.9389 }, // 三島市南部
-
-    // 三島市西部
-    { lat: 35.1123, lng: 138.8923 }, // 三島市西部
-    { lat: 35.1234, lng: 138.8812 }, // 三島市西部住宅地
-    { lat: 35.1045, lng: 138.8745 }, // 三島市南西部
-    { lat: 35.1312, lng: 138.8667 }, // 三島市北西部
-
-    // 三島市東部
-    { lat: 35.1134, lng: 138.9523 }, // 三島市東部
-    { lat: 35.1245, lng: 138.9634 }, // 三島市東部住宅地
-    { lat: 35.1023, lng: 138.9745 }, // 三島市南東部
-    { lat: 35.1356, lng: 138.9556 }, // 三島市北東部
-
-    // 三島市北部
-    { lat: 35.1523, lng: 138.9245 }, // 三島市北部住宅地
-    { lat: 35.1634, lng: 138.9134 }, // 三島市北部商業地
-    { lat: 35.1745, lng: 138.9023 }, // 三島市北部工業地
-
-    // 三島市南部
-    { lat: 35.0745, lng: 138.9323 }, // 三島市南部住宅地
-    { lat: 35.0634, lng: 138.9434 }, // 三島市南部商業地
-    { lat: 35.0523, lng: 138.9545 }, // 三島市南部工業地
-
-    // 三島市内陸部
-    { lat: 35.1245, lng: 138.9034 }, // 三島市内陸部住宅地
-    { lat: 35.1134, lng: 138.9145 }, // 三島市内陸部商業地
-    { lat: 35.1023, lng: 138.9256 }, // 三島市内陸部工業地
-    { lat: 35.1312, lng: 138.9367 }, // 三島市内陸部公園
-    { lat: 35.0934, lng: 138.9478 }, // 三島市内陸部学校
-    { lat: 35.1245, lng: 138.9589 }, // 三島市内陸部病院
-  ],
-  下田市: [
-    // 下田市中心部
-    { lat: 34.6789, lng: 138.9456 }, // 下田市中心
-    { lat: 34.6889, lng: 138.9356 }, // 下田駅周辺
-    { lat: 34.6689, lng: 138.9556 }, // 下田市役所周辺
-    { lat: 34.6989, lng: 138.9256 }, // 下田市北部
-    { lat: 34.6589, lng: 138.9656 }, // 下田市南部
-
-    // 下田市西部
-    { lat: 34.6723, lng: 138.9123 }, // 下田市西部
-    { lat: 34.6834, lng: 138.9012 }, // 下田市西部住宅地
-    { lat: 34.6645, lng: 138.8945 }, // 下田市南西部
-    { lat: 34.6912, lng: 138.8867 }, // 下田市北西部
-
-    // 下田市東部
-    { lat: 34.6734, lng: 138.9723 }, // 下田市東部
-    { lat: 34.6845, lng: 138.9834 }, // 下田市東部住宅地
-    { lat: 34.6623, lng: 138.9945 }, // 下田市南東部
-    { lat: 34.6956, lng: 138.9756 }, // 下田市北東部
-
-    // 下田市北部
-    { lat: 34.7023, lng: 138.9345 }, // 下田市北部住宅地
-    { lat: 34.7134, lng: 138.9234 }, // 下田市北部商業地
-    { lat: 34.7245, lng: 138.9123 }, // 下田市北部工業地
-
-    // 下田市南部
-    { lat: 34.6345, lng: 138.9523 }, // 下田市南部住宅地
-    { lat: 34.6234, lng: 138.9634 }, // 下田市南部商業地
-    { lat: 34.6123, lng: 138.9745 }, // 下田市南部工業地
-
-    // 下田市内陸部
-    { lat: 34.6845, lng: 138.9234 }, // 下田市内陸部住宅地
-    { lat: 34.6734, lng: 138.9345 }, // 下田市内陸部商業地
-    { lat: 34.6623, lng: 138.9456 }, // 下田市内陸部工業地
-    { lat: 34.6912, lng: 138.9567 }, // 下田市内陸部公園
-    { lat: 34.6534, lng: 138.9678 }, // 下田市内陸部学校
-    { lat: 34.6845, lng: 138.9789 }, // 下田市内陸部病院
-  ],
+// 静岡県の4地域の定義（陸地の都市座標を基準）
+const SHIZUOKA_REGIONS = {
+  西部: {
+    name: "西部",
+    center: { lat: 34.7108, lng: 137.7261 }, // 浜松市中心
+    cities: [
+      { name: "浜松市", lat: 34.7108, lng: 137.7261, weight: 3 }, // 大都市なので重み付け
+      { name: "磐田市", lat: 34.7167, lng: 137.8514, weight: 2 },
+      { name: "掛川市", lat: 34.7697, lng: 138.0144, weight: 2 },
+      { name: "袋井市", lat: 34.75, lng: 137.9167, weight: 1 },
+      { name: "湖西市", lat: 34.7, lng: 137.5333, weight: 1 },
+      { name: "菊川市", lat: 34.7583, lng: 138.0833, weight: 1 },
+      { name: "森町", lat: 34.8333, lng: 137.9333, weight: 1 },
+      // 内陸部の追加ポイント
+      { name: "浜松市北区", lat: 34.8, lng: 137.7, weight: 1 },
+      { name: "浜松市天竜区", lat: 35.0, lng: 137.8, weight: 1 },
+    ],
+  },
+  中部: {
+    name: "中部",
+    center: { lat: 34.9756, lng: 138.3828 }, // 静岡市中心
+    cities: [
+      { name: "静岡市", lat: 34.9756, lng: 138.3828, weight: 3 }, // 大都市なので重み付け
+      { name: "焼津市", lat: 34.8667, lng: 138.3167, weight: 2 },
+      { name: "藤枝市", lat: 34.8667, lng: 138.25, weight: 2 },
+      { name: "島田市", lat: 34.8369, lng: 138.1739, weight: 2 },
+      { name: "牧之原市", lat: 34.7333, lng: 138.2167, weight: 1 },
+      { name: "吉田町", lat: 34.7667, lng: 138.2667, weight: 1 },
+      { name: "川根本町", lat: 35.0667, lng: 138.1333, weight: 1 },
+      // 内陸部の追加ポイント
+      { name: "静岡市葵区", lat: 35.0, lng: 138.4, weight: 2 },
+      { name: "静岡市駿河区", lat: 34.95, lng: 138.4, weight: 1 },
+      { name: "静岡市清水区", lat: 35.0, lng: 138.5, weight: 1 },
+    ],
+  },
+  東部: {
+    name: "東部",
+    center: { lat: 35.1614, lng: 138.6764 }, // 富士市中心
+    cities: [
+      { name: "沼津市", lat: 35.0966, lng: 138.8637, weight: 2 },
+      { name: "富士市", lat: 35.1614, lng: 138.6764, weight: 3 }, // 大都市なので重み付け
+      { name: "富士宮市", lat: 35.2194, lng: 138.6222, weight: 2 },
+      { name: "三島市", lat: 35.1186, lng: 138.9183, weight: 2 },
+      { name: "御殿場市", lat: 35.3081, lng: 138.9331, weight: 2 },
+      { name: "裾野市", lat: 35.1725, lng: 138.9072, weight: 1 },
+      { name: "清水町", lat: 35.1167, lng: 138.8833, weight: 1 },
+      { name: "長泉町", lat: 35.1333, lng: 138.8667, weight: 1 },
+      { name: "小山町", lat: 35.3667, lng: 138.9333, weight: 1 },
+      // 内陸部の追加ポイント
+      { name: "富士宮市北部", lat: 35.3, lng: 138.6, weight: 1 },
+      { name: "御殿場市北部", lat: 35.35, lng: 138.95, weight: 1 },
+    ],
+  },
+  伊豆: {
+    name: "伊豆",
+    center: { lat: 34.9658, lng: 139.1019 }, // 伊東市中心
+    cities: [
+      // 海岸沿いの都市は内陸寄りの座標を使用
+      { name: "熱海市", lat: 35.0953, lng: 139.0677, weight: 2 },
+      { name: "伊東市", lat: 34.9658, lng: 139.1019, weight: 2 },
+      { name: "下田市", lat: 34.6792, lng: 138.9431, weight: 1 },
+      { name: "伊豆市", lat: 34.9667, lng: 138.9333, weight: 2 }, // 内陸部
+      { name: "伊豆の国市", lat: 35.0333, lng: 138.9167, weight: 2 }, // 内陸部
+      { name: "東伊豆町", lat: 34.8167, lng: 139.0333, weight: 1 },
+      { name: "河津町", lat: 34.7333, lng: 139.0, weight: 1 },
+      { name: "函南町", lat: 35.1, lng: 138.9333, weight: 1 },
+      // 内陸部の追加ポイント（確実に陸地）
+      { name: "伊豆市中部", lat: 34.98, lng: 138.95, weight: 1 },
+      { name: "伊豆の国市中部", lat: 35.04, lng: 138.93, weight: 1 },
+      { name: "修善寺", lat: 34.97, lng: 138.93, weight: 1 },
+    ],
+  },
 }
 
-// 災害名のテンプレート
+// 災害タイトルのテンプレート（地域特性を考慮）
 const DISASTER_TITLE_TEMPLATES = {
   river: ["○○川氾濫", "○○川堤防決壊", "○○川増水被害", "○○川護岸崩壊"],
   coast: ["○○海岸高潮被害", "○○海岸浸食", "○○海岸津波被害", "○○海岸越波"],
@@ -260,142 +91,6 @@ const DISASTER_TITLE_TEMPLATES = {
   other: ["○○施設被害", "○○公共施設損傷", "○○インフラ被害", "○○ライフライン被害"],
 }
 
-// 地名のリスト（市町ごと）
-const PLACE_NAMES = {
-  沼津市: [
-    "沼津",
-    "原",
-    "片浜",
-    "西浦",
-    "内浦",
-    "戸田",
-    "大平",
-    "静浦",
-    "西沢田",
-    "東沢田",
-    "岡宮",
-    "大岡",
-    "下香貫",
-    "上香貫",
-    "三園",
-    "我入道",
-    "井出",
-    "中沢田",
-    "東椎路",
-    "西椎路",
-    "大塚",
-    "松長",
-    "本郷",
-    "東熊堂",
-    "西熊堂",
-  ],
-  富士市: [
-    "富士",
-    "吉原",
-    "鷹岡",
-    "岩松",
-    "富士川",
-    "松岡",
-    "田子浦",
-    "入山瀬",
-    "元吉原",
-    "伝法",
-    "今泉",
-    "比奈",
-    "大淵",
-    "須津",
-    "天間",
-    "松野",
-    "富士駅前",
-    "水戸島",
-    "青葉台",
-    "厚原",
-    "依田橋",
-    "中里",
-    "中之郷",
-    "神戸",
-    "松本",
-  ],
-  静岡市: [
-    "静岡",
-    "清水",
-    "駿河",
-    "葵",
-    "駒形",
-    "安倍川",
-    "長田",
-    "用宗",
-    "草薙",
-    "東静岡",
-    "丸子",
-    "由比",
-    "蒲原",
-    "興津",
-    "井川",
-    "梅ケ島",
-    "大谷",
-    "小鹿",
-    "羽鳥",
-    "日本平",
-  ],
-  浜松市: [
-    "浜松",
-    "天竜",
-    "舞阪",
-    "雄踏",
-    "細江",
-    "引佐",
-    "三ヶ日",
-    "浜北",
-    "東区",
-    "西区",
-    "南区",
-    "北区",
-    "中区",
-    "天竜川",
-    "佐鳴湖",
-    "浜名湖",
-    "遠州灘",
-    "浜松城",
-    "浜松駅",
-    "新浜松",
-  ],
-  三島市: [
-    "三島",
-    "大場",
-    "谷田",
-    "沢地",
-    "富士見台",
-    "松本",
-    "徳倉",
-    "加茂",
-    "長伏",
-    "中島",
-    "安久",
-    "大宮町",
-    "三島駅",
-    "三島田町",
-    "三島本町",
-  ],
-  下田市: [
-    "下田",
-    "白浜",
-    "吉佐美",
-    "田牛",
-    "須崎",
-    "柿崎",
-    "蓮台寺",
-    "河内",
-    "稲梓",
-    "箕作",
-    "立野",
-    "下田港",
-    "下田駅",
-    "下田温泉",
-    "下田海中水族館",
-  ],
-}
-
 // 災害の説明文のテンプレート
 const DISASTER_DESCRIPTION_TEMPLATES = [
   "○○地区で発生した災害により、周辺施設に被害が出ています。現在、復旧作業が進められています。",
@@ -403,6 +98,8 @@ const DISASTER_DESCRIPTION_TEMPLATES = [
   "○○で発生した災害により、周辺道路が通行止めとなっています。迂回路をご利用ください。",
   "○○地区の被災箇所では、応急復旧工事が実施されています。完了までには約○日かかる見込みです。",
   "○○における被害は広範囲に及んでおり、詳細な調査が必要です。周辺住民は避難指示に従ってください。",
+  "○○地区では、二次災害防止のため警戒区域が設定されています。住民の皆様はご注意ください。",
+  "○○での災害により、ライフラインに影響が出ています。復旧作業を急いでいます。",
 ]
 
 // ランダムな日付を生成（過去3ヶ月以内）
@@ -417,130 +114,158 @@ function generateRandomDate(): string {
   return randomDate.toISOString().split("T")[0]
 }
 
-// 陸地の座標からランダムに選択し、より自然なランダム性を加える
-function generateRandomPositionOnLand(city: string): { lat: number; lng: number } {
-  // 市町の陸地座標リストを取得
-  const landCoordinates = LAND_COORDINATES[city as keyof typeof LAND_COORDINATES] || []
+// 重み付きランダム選択（都市の重要度に応じて選択確率を調整）
+function getWeightedRandomCity(cities: Array<{ name: string; lat: number; lng: number; weight: number }>) {
+  const totalWeight = cities.reduce((sum, city) => sum + city.weight, 0)
+  let random = Math.random() * totalWeight
 
-  if (landCoordinates.length === 0) {
-    // 陸地座標がない場合は市町の中心座標を使用
-    const cityInfo = SHIZUOKA_CITIES.find((c) => c.name === city)
-    if (!cityInfo) {
-      throw new Error(`City not found: ${city}`)
+  for (const city of cities) {
+    random -= city.weight
+    if (random <= 0) {
+      return city
     }
-    return { lat: cityInfo.lat, lng: cityInfo.lng }
   }
 
-  // ランダムに座標を選択（重複を避けるためにインデックスを記録）
-  const usedIndices = new Set<number>()
-  const getRandomIndex = () => {
-    // 使用可能なインデックスがなくなった場合はリセット
-    if (usedIndices.size >= landCoordinates.length) {
-      usedIndices.clear()
+  return cities[cities.length - 1] // フォールバック
+}
+
+// 陸地内の安全な位置を生成（都市座標から小さなオフセット）
+function generateSafeLandPosition(baseCity: { name: string; lat: number; lng: number; weight: number }): {
+  lat: number
+  lng: number
+} {
+  // 都市中心から最大2km以内のランダムオフセット（陸地を保証）
+  const maxOffsetKm = 2.0
+  const offsetLat = (Math.random() - 0.5) * (maxOffsetKm / 111) // 1度 ≈ 111km
+  const offsetLng = (Math.random() - 0.5) * (maxOffsetKm / (111 * Math.cos((baseCity.lat * Math.PI) / 180)))
+
+  // 海岸沿いの都市の場合は内陸方向により重みを付ける
+  const isCoastalCity =
+    baseCity.name.includes("熱海") || baseCity.name.includes("下田") || baseCity.name.includes("東伊豆")
+
+  let finalOffsetLat = offsetLat
+  let finalOffsetLng = offsetLng
+
+  if (isCoastalCity) {
+    // 海岸沿いの都市では内陸方向（北または西）により重みを付ける
+    finalOffsetLat = Math.abs(offsetLat) * 0.5 // 北方向に偏らせる
+    if (baseCity.lng > 139.0) {
+      // 伊豆半島東岸の場合は西方向に偏らせる
+      finalOffsetLng = -Math.abs(offsetLng) * 0.5
     }
-
-    let index
-    do {
-      index = Math.floor(Math.random() * landCoordinates.length)
-    } while (usedIndices.has(index))
-
-    usedIndices.add(index)
-    return index
   }
-
-  const randomIndex = getRandomIndex()
-  const baseCoordinate = landCoordinates[randomIndex]
-
-  // より自然なランダム性を加える（ガウス分布を使用して中心付近に集中させる）
-  // Box-Muller変換でガウス分布の乱数を生成
-  const generateGaussian = () => {
-    const u1 = Math.random()
-    const u2 = Math.random()
-    const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2)
-    return z0
-  }
-
-  // 標準偏差を小さくして、より自然な分布に
-  const stdDev = 0.0015
-  const latOffset = generateGaussian() * stdDev
-  const lngOffset = generateGaussian() * stdDev
 
   return {
-    lat: baseCoordinate.lat + latOffset,
-    lng: baseCoordinate.lng + lngOffset,
+    lat: baseCity.lat + finalOffsetLat,
+    lng: baseCity.lng + finalOffsetLng,
   }
 }
 
-// ランダムな災害マーカーを生成
+// 災害マーカーを生成
 export function generateDisasterMarkers(): DisasterMarker[] {
   const markers: DisasterMarker[] = []
   let idCounter = 1
 
-  // 各市町ごとに指定された数のマーカーを生成
-  for (const city of SHIZUOKA_CITIES) {
-    for (let i = 0; i < city.count; i++) {
-      // 陸地の座標を生成
-      const position = generateRandomPositionOnLand(city.name)
+  // 各地域について処理
+  Object.values(SHIZUOKA_REGIONS).forEach((region) => {
+    console.log(`${region.name}地域のマーカーを生成中...`)
 
-      // ランダムなカテゴリーを選択
-      const randomCategoryIndex = Math.floor(Math.random() * disasterCategories.length)
-      const category = disasterCategories[randomCategoryIndex]
+    // 各カテゴリーについて処理
+    disasterCategories.forEach((category) => {
+      // 各カテゴリーごとに3～5個のマーカーを生成
+      const markerCount = Math.floor(Math.random() * 3) + 3 // 3～5個
 
-      // 市町に対応する地名リストからランダムな地名を選択
-      const cityPlaceNames = PLACE_NAMES[city.name as keyof typeof PLACE_NAMES] || []
-      const randomPlaceIndex = Math.floor(Math.random() * cityPlaceNames.length)
-      const placeName = cityPlaceNames[randomPlaceIndex]
+      for (let i = 0; i < markerCount; i++) {
+        // 重み付きランダムで都市を選択
+        const baseCity = getWeightedRandomCity(region.cities)
 
-      // カテゴリーに基づいたタイトルテンプレートを選択
-      const titleTemplates =
-        DISASTER_TITLE_TEMPLATES[category.id as keyof typeof DISASTER_TITLE_TEMPLATES] || DISASTER_TITLE_TEMPLATES.other
-      const randomTitleIndex = Math.floor(Math.random() * titleTemplates.length)
-      const titleTemplate = titleTemplates[randomTitleIndex]
+        // 選択された都市から安全な陸地位置を生成
+        const position = generateSafeLandPosition(baseCity)
 
-      // タイトルに地名を挿入
-      const title = titleTemplate.replace("○○", placeName)
+        // カテゴリーに基づいたタイトルテンプレートを選択
+        const titleTemplates =
+          DISASTER_TITLE_TEMPLATES[category.id as keyof typeof DISASTER_TITLE_TEMPLATES] ||
+          DISASTER_TITLE_TEMPLATES.other
+        const randomTitleIndex = Math.floor(Math.random() * titleTemplates.length)
+        const titleTemplate = titleTemplates[randomTitleIndex]
 
-      // ランダムな説明文を選択して地名を挿入
-      const randomDescIndex = Math.floor(Math.random() * DISASTER_DESCRIPTION_TEMPLATES.length)
-      let description = DISASTER_DESCRIPTION_TEMPLATES[randomDescIndex].replace("○○", placeName)
+        // タイトルに地名を挿入
+        const cityNameForTitle = baseCity.name.replace("市", "").replace("町", "").replace("村", "").replace("区", "")
+        const title = titleTemplate.replace("○○", cityNameForTitle)
 
-      // 説明文の「約○日」をランダムな日数に置き換え
-      if (description.includes("約○日")) {
-        const randomDays = Math.floor(Math.random() * 30) + 1
-        description = description.replace("約○日", `約${randomDays}日`)
+        // ランダムな説明文を選択して地名を挿入
+        const randomDescIndex = Math.floor(Math.random() * DISASTER_DESCRIPTION_TEMPLATES.length)
+        let description = DISASTER_DESCRIPTION_TEMPLATES[randomDescIndex].replace("○○", cityNameForTitle)
+
+        // 説明文の「約○日」をランダムな日数に置き換え
+        if (description.includes("約○日")) {
+          const randomDays = Math.floor(Math.random() * 30) + 1
+          description = description.replace("約○日", `約${randomDays}日`)
+        }
+
+        // ランダムな深刻度を選択（重要都市では重大な災害の確率を上げる）
+        const severities: Array<DisasterMarker["severity"]> = ["low", "medium", "high", "critical"]
+        let severityWeights = [0.3, 0.4, 0.2, 0.1] // 通常の重み
+
+        if (baseCity.weight >= 3) {
+          // 重要都市では重大災害の確率を上げる
+          severityWeights = [0.2, 0.3, 0.3, 0.2]
+        }
+
+        const randomSeverity = Math.random()
+        let cumulativeWeight = 0
+        let severityIndex = 0
+
+        for (let j = 0; j < severityWeights.length; j++) {
+          cumulativeWeight += severityWeights[j]
+          if (randomSeverity <= cumulativeWeight) {
+            severityIndex = j
+            break
+          }
+        }
+
+        const severity = severities[severityIndex]
+
+        // ランダムなステータスを選択
+        const statuses: Array<DisasterMarker["status"]> = ["reported", "investigating", "in_progress", "resolved"]
+        const randomStatusIndex = Math.floor(Math.random() * statuses.length)
+        const status = statuses[randomStatusIndex]
+
+        // ランダムな日付を生成
+        const reportDate = generateRandomDate()
+
+        // マーカーを作成
+        markers.push({
+          id: `${region.name}-${category.id}-${idCounter}`,
+          position,
+          title,
+          description,
+          category: category.id,
+          severity,
+          reportDate,
+          status,
+          city: baseCity.name,
+          // 画像はプレースホルダーを使用
+          image: `/placeholder.svg?key=${region.name}-${category.id}-${idCounter}`,
+        })
+
+        idCounter++
       }
+    })
+  })
 
-      // ランダムな深刻度を選択
-      const severities: Array<DisasterMarker["severity"]> = ["low", "medium", "high", "critical"]
-      const randomSeverityIndex = Math.floor(Math.random() * severities.length)
-      const severity = severities[randomSeverityIndex]
+  console.log(`合計 ${markers.length} 個のマーカーを生成しました（すべて陸地に配置）`)
+  console.log(`地域別内訳:`)
+  Object.values(SHIZUOKA_REGIONS).forEach((region) => {
+    const regionMarkers = markers.filter((m) => m.id.startsWith(region.name))
+    console.log(`  ${region.name}: ${regionMarkers.length}個`)
+  })
 
-      // ランダムなステータスを選択
-      const statuses: Array<DisasterMarker["status"]> = ["reported", "investigating", "in_progress", "resolved"]
-      const randomStatusIndex = Math.floor(Math.random() * statuses.length)
-      const status = statuses[randomStatusIndex]
-
-      // ランダムな日付を生成
-      const reportDate = generateRandomDate()
-
-      // マーカーを作成
-      markers.push({
-        id: `disaster-${idCounter}`,
-        position,
-        title,
-        description,
-        category: category.id,
-        severity,
-        reportDate,
-        status,
-        city: city.name,
-        // 画像はプレースホルダーを使用
-        image: `/placeholder.svg?key=disaster-${idCounter}`,
-      })
-
-      idCounter++
-    }
-  }
+  // 座標の範囲をチェック（デバッグ用）
+  const latitudes = markers.map((m) => m.position.lat)
+  const longitudes = markers.map((m) => m.position.lng)
+  console.log(`座標範囲: 緯度 ${Math.min(...latitudes).toFixed(4)} - ${Math.max(...latitudes).toFixed(4)}`)
+  console.log(`座標範囲: 経度 ${Math.min(...longitudes).toFixed(4)} - ${Math.max(...longitudes).toFixed(4)}`)
 
   return markers
 }

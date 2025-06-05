@@ -441,6 +441,9 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   // フィルタリングされたマーカー
   const filteredMarkers = markers.filter((marker) => selectedCategories.includes(marker.category))
 
+  // マーカーが一つもない場合のフォールバックメッセージ
+  const noMarkersAvailable = filteredMarkers.length === 0
+
   // 吹き出しが表示されているマーカーのIDリスト
   const activeMarkerIds = Object.keys(activeInfoWindows)
 
@@ -574,6 +577,12 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
       </div>
 
       <div ref={mapRef} className="w-full h-full" />
+
+      {noMarkersAvailable && map && (
+        <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-white p-4 rounded-md shadow-md z-10">
+          <p className="text-center">表示するマーカーがありません。カテゴリーフィルターを確認してください。</p>
+        </div>
+      )}
 
       {map &&
         isMapLoaded &&

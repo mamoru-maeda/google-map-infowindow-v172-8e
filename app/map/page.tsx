@@ -4,6 +4,8 @@ import { useState, useEffect } from "react"
 import MapContainer from "@/components/map-container"
 import { disasterCategories } from "@/types/disaster-types"
 import { generateDisasterMarkers } from "@/utils/generate-disaster-markers"
+// 静的マーカーをインポート
+import { staticDisasterMarkers } from "@/utils/static-markers"
 
 export default function MapPage() {
   // クライアントサイドレンダリングを確認
@@ -39,14 +41,26 @@ export default function MapPage() {
   // 静岡県の中心座標（少し南に調整して全体が見えるように）
   const shizuokaCenterPosition = { lat: 34.95, lng: 138.38 }
 
+  // 既存のコードを変更して、動的生成と静的マーカーを組み合わせる
   // 120個の災害マーカーを生成
   let disasterMarkers = []
   try {
-    disasterMarkers = generateDisasterMarkers()
+    // 動的生成を試みる
+    const dynamicMarkers = generateDisasterMarkers()
+
+    // 動的マーカーが生成できた場合は使用、失敗した場合は静的マーカーを使用
+    disasterMarkers = dynamicMarkers.length > 0 ? dynamicMarkers : staticDisasterMarkers
+
+    // 動的マーカーが空の配列の場合も静的マーカーを使用
+    if (disasterMarkers.length === 0) {
+      console.log("動的マーカーが生成されませんでした。静的マーカーを使用します。")
+      disasterMarkers = staticDisasterMarkers
+    }
   } catch (error) {
     console.error("災害マーカーの生成に失敗しました:", error)
-    setIsError(true)
-    setErrorMessage("災害マーカーの生成に失敗しました")
+    console.log("静的マーカーを使用します。")
+    disasterMarkers = staticDisasterMarkers
+    setIsError(false) // エラー表示を抑制
   }
 
   // エラーが発生した場合はエラーメッセージを表示

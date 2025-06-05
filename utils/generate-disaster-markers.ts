@@ -163,109 +163,118 @@ function generateSafeLandPosition(baseCity: { name: string; lat: number; lng: nu
 
 // 災害マーカーを生成
 export function generateDisasterMarkers(): DisasterMarker[] {
-  const markers: DisasterMarker[] = []
-  let idCounter = 1
+  try {
+    const markers: DisasterMarker[] = []
+    let idCounter = 1
 
-  // 各地域について処理
-  Object.values(SHIZUOKA_REGIONS).forEach((region) => {
-    console.log(`${region.name}地域のマーカーを生成中...`)
+    // 各地域について処理
+    Object.values(SHIZUOKA_REGIONS).forEach((region) => {
+      console.log(`${region.name}地域のマーカーを生成中...`)
 
-    // 各カテゴリーについて処理
-    disasterCategories.forEach((category) => {
-      // 各カテゴリーごとに3～5個のマーカーを生成
-      const markerCount = Math.floor(Math.random() * 3) + 3 // 3～5個
+      // 各カテゴリーについて処理
+      disasterCategories.forEach((category) => {
+        // 各カテゴリーごとに3～5個のマーカーを生成
+        const markerCount = Math.floor(Math.random() * 3) + 3 // 3～5個
 
-      for (let i = 0; i < markerCount; i++) {
-        // 重み付きランダムで都市を選択
-        const baseCity = getWeightedRandomCity(region.cities)
+        for (let i = 0; i < markerCount; i++) {
+          try {
+            // 重み付きランダムで都市を選択
+            const baseCity = getWeightedRandomCity(region.cities)
 
-        // 選択された都市から安全な陸地位置を生成
-        const position = generateSafeLandPosition(baseCity)
+            // 選択された都市から安全な陸地位置を生成
+            const position = generateSafeLandPosition(baseCity)
 
-        // カテゴリーに基づいたタイトルテンプレートを選択
-        const titleTemplates =
-          DISASTER_TITLE_TEMPLATES[category.id as keyof typeof DISASTER_TITLE_TEMPLATES] ||
-          DISASTER_TITLE_TEMPLATES.other
-        const randomTitleIndex = Math.floor(Math.random() * titleTemplates.length)
-        const titleTemplate = titleTemplates[randomTitleIndex]
+            // カテゴリーに基づいたタイトルテンプレートを選択
+            const titleTemplates =
+              DISASTER_TITLE_TEMPLATES[category.id as keyof typeof DISASTER_TITLE_TEMPLATES] ||
+              DISASTER_TITLE_TEMPLATES.other
+            const randomTitleIndex = Math.floor(Math.random() * titleTemplates.length)
+            const titleTemplate = titleTemplates[randomTitleIndex]
 
-        // タイトルに地名を挿入
-        const cityNameForTitle = baseCity.name.replace("市", "").replace("町", "").replace("村", "").replace("区", "")
-        const title = titleTemplate.replace("○○", cityNameForTitle)
+            // タイトルに地名を挿入
+            const cityNameForTitle = baseCity.name
+              .replace("市", "")
+              .replace("町", "")
+              .replace("村", "")
+              .replace("区", "")
+            const title = titleTemplate.replace("○○", cityNameForTitle)
 
-        // ランダムな説明文を選択して地名を挿入
-        const randomDescIndex = Math.floor(Math.random() * DISASTER_DESCRIPTION_TEMPLATES.length)
-        let description = DISASTER_DESCRIPTION_TEMPLATES[randomDescIndex].replace("○○", cityNameForTitle)
+            // ランダムな説明文を選択して地名を挿入
+            const randomDescIndex = Math.floor(Math.random() * DISASTER_DESCRIPTION_TEMPLATES.length)
+            let description = DISASTER_DESCRIPTION_TEMPLATES[randomDescIndex].replace("○○", cityNameForTitle)
 
-        // 説明文の「約○日」をランダムな日数に置き換え
-        if (description.includes("約○日")) {
-          const randomDays = Math.floor(Math.random() * 30) + 1
-          description = description.replace("約○日", `約${randomDays}日`)
-        }
+            // 説明文の「約○日」をランダムな日数に置き換え
+            if (description.includes("約○日")) {
+              const randomDays = Math.floor(Math.random() * 30) + 1
+              description = description.replace("約○日", `約${randomDays}日`)
+            }
 
-        // ランダムな深刻度を選択（重要都市では重大な災害の確率を上げる）
-        const severities: Array<DisasterMarker["severity"]> = ["low", "medium", "high", "critical"]
-        let severityWeights = [0.3, 0.4, 0.2, 0.1] // 通常の重み
+            // ランダムな深刻度を選択（重要都市では重大な災害の確率を上げる）
+            const severities: Array<DisasterMarker["severity"]> = ["low", "medium", "high", "critical"]
+            let severityWeights = [0.3, 0.4, 0.2, 0.1] // 通常の重み
 
-        if (baseCity.weight >= 3) {
-          // 重要都市では重大災害の確率を上げる
-          severityWeights = [0.2, 0.3, 0.3, 0.2]
-        }
+            if (baseCity.weight >= 3) {
+              // 重要都市では重大災害の確率を上げる
+              severityWeights = [0.2, 0.3, 0.3, 0.2]
+            }
 
-        const randomSeverity = Math.random()
-        let cumulativeWeight = 0
-        let severityIndex = 0
+            const randomSeverity = Math.random()
+            let cumulativeWeight = 0
+            let severityIndex = 0
 
-        for (let j = 0; j < severityWeights.length; j++) {
-          cumulativeWeight += severityWeights[j]
-          if (randomSeverity <= cumulativeWeight) {
-            severityIndex = j
-            break
+            for (let j = 0; j < severityWeights.length; j++) {
+              cumulativeWeight += severityWeights[j]
+              if (randomSeverity <= cumulativeWeight) {
+                severityIndex = j
+                break
+              }
+            }
+
+            const severity = severities[severityIndex]
+
+            // ランダムなステータスを選択
+            const statuses: Array<DisasterMarker["status"]> = ["reported", "investigating", "in_progress", "resolved"]
+            const randomStatusIndex = Math.floor(Math.random() * statuses.length)
+            const status = statuses[randomStatusIndex]
+
+            // ランダムな日付を生成
+            const reportDate = generateRandomDate()
+
+            // マーカーを作成
+            markers.push({
+              id: `${region.name}-${category.id}-${idCounter}`,
+              position,
+              title,
+              description,
+              category: category.id,
+              severity,
+              reportDate,
+              status,
+              city: baseCity.name,
+              // 画像はプレースホルダーを使用
+              image: `/placeholder.svg?height=200&width=300&query=${category.name}+disaster`,
+            })
+
+            idCounter++
+          } catch (innerError) {
+            console.error(`マーカー生成中のエラー (${region.name}-${category.id}):`, innerError)
+            // 個別のマーカー生成エラーは無視して続行
           }
         }
-
-        const severity = severities[severityIndex]
-
-        // ランダムなステータスを選択
-        const statuses: Array<DisasterMarker["status"]> = ["reported", "investigating", "in_progress", "resolved"]
-        const randomStatusIndex = Math.floor(Math.random() * statuses.length)
-        const status = statuses[randomStatusIndex]
-
-        // ランダムな日付を生成
-        const reportDate = generateRandomDate()
-
-        // マーカーを作成
-        markers.push({
-          id: `${region.name}-${category.id}-${idCounter}`,
-          position,
-          title,
-          description,
-          category: category.id,
-          severity,
-          reportDate,
-          status,
-          city: baseCity.name,
-          // 画像はプレースホルダーを使用
-          image: `/placeholder.svg?key=${region.name}-${category.id}-${idCounter}`,
-        })
-
-        idCounter++
-      }
+      })
     })
-  })
 
-  console.log(`合計 ${markers.length} 個のマーカーを生成しました（すべて陸地に配置）`)
-  console.log(`地域別内訳:`)
-  Object.values(SHIZUOKA_REGIONS).forEach((region) => {
-    const regionMarkers = markers.filter((m) => m.id.startsWith(region.name))
-    console.log(`  ${region.name}: ${regionMarkers.length}個`)
-  })
+    console.log(`合計 ${markers.length} 個のマーカーを生成しました（すべて陸地に配置）`)
 
-  // 座標の範囲をチェック（デバッグ用）
-  const latitudes = markers.map((m) => m.position.lat)
-  const longitudes = markers.map((m) => m.position.lng)
-  console.log(`座標範囲: 緯度 ${Math.min(...latitudes).toFixed(4)} - ${Math.max(...latitudes).toFixed(4)}`)
-  console.log(`座標範囲: 経度 ${Math.min(...longitudes).toFixed(4)} - ${Math.max(...longitudes).toFixed(4)}`)
+    // マーカーが生成できなかった場合は空の配列を返す
+    if (markers.length === 0) {
+      console.warn("マーカーが生成できませんでした。")
+      return []
+    }
 
-  return markers
+    return markers
+  } catch (error) {
+    console.error("マーカー生成中の重大なエラー:", error)
+    return [] // エラー時は空の配列を返す
+  }
 }

@@ -55,27 +55,34 @@ const Map: React.FC<MapProps> = ({ apiKey, center, zoom, markers = [] }) => {
 
   // マップの初期化
   const initMap = useCallback(() => {
-    if (!mapRef.current) return
-
-    const mapOptions: google.maps.MapOptions = {
-      center,
-      zoom,
-      disableDefaultUI: false,
-      zoomControl: true,
-      mapTypeControl: true,
-      scaleControl: true,
-      streetViewControl: true,
-      rotateControl: true,
-      fullscreenControl: true,
+    if (!mapRef.current) {
+      console.error("マップコンテナの参照が見つかりません")
+      return
     }
 
-    const map = new google.maps.Map(mapRef.current, mapOptions)
-    setMapInstance(map)
+    try {
+      const mapOptions: google.maps.MapOptions = {
+        center,
+        zoom,
+        disableDefaultUI: false,
+        zoomControl: true,
+        mapTypeControl: true,
+        scaleControl: true,
+        streetViewControl: true,
+        rotateControl: true,
+        fullscreenControl: true,
+      }
 
-    // マップがアイドル状態になったら（完全にロードされたら）フラグを設定
-    google.maps.event.addListenerOnce(map, "idle", () => {
-      setIsMapLoaded(true)
-    })
+      const map = new google.maps.Map(mapRef.current, mapOptions)
+      setMapInstance(map)
+
+      // マップがアイドル状態になったら（完全にロードされたら）フラグを設定
+      google.maps.event.addListenerOnce(map, "idle", () => {
+        setIsMapLoaded(true)
+      })
+    } catch (error) {
+      console.error("マップの初期化に失敗しました:", error)
+    }
   }, [center, zoom])
 
   // マーカーの設定

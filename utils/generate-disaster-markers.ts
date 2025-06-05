@@ -1,28 +1,5 @@
 import { type DisasterMarker, disasterCategories } from "@/types/disaster-types"
 
-// 疑似乱数生成器（シード値固定）
-class SeededRandom {
-  private seed: number
-
-  constructor(seed = 12345) {
-    this.seed = seed
-  }
-
-  // 0から1の間の疑似乱数を生成
-  random(): number {
-    const x = Math.sin(this.seed++) * 10000
-    return x - Math.floor(x)
-  }
-
-  // 指定された範囲の整数を生成
-  randomInt(min: number, max: number): number {
-    return Math.floor(this.random() * (max - min + 1)) + min
-  }
-}
-
-// グローバルな疑似乱数生成器インスタンス
-const seededRandom = new SeededRandom(12345)
-
 // 静岡県の市町の中心座標と範囲
 const SHIZUOKA_CITIES = [
   { name: "沼津市", lat: 35.0956, lng: 138.8636, count: 25 },
@@ -434,7 +411,7 @@ function generateRandomDate(): string {
   const threeMonthsAgo = new Date()
   threeMonthsAgo.setMonth(now.getMonth() - 3)
 
-  const randomTimestamp = threeMonthsAgo.getTime() + seededRandom.random() * (now.getTime() - threeMonthsAgo.getTime())
+  const randomTimestamp = threeMonthsAgo.getTime() + Math.random() * (now.getTime() - threeMonthsAgo.getTime())
   const randomDate = new Date(randomTimestamp)
 
   return randomDate.toISOString().split("T")[0]
@@ -464,7 +441,7 @@ function generateRandomPositionOnLand(city: string): { lat: number; lng: number 
 
     let index
     do {
-      index = seededRandom.randomInt(0, landCoordinates.length - 1)
+      index = Math.floor(Math.random() * landCoordinates.length)
     } while (usedIndices.has(index))
 
     usedIndices.add(index)
@@ -477,8 +454,8 @@ function generateRandomPositionOnLand(city: string): { lat: number; lng: number 
   // より自然なランダム性を加える（ガウス分布を使用して中心付近に集中させる）
   // Box-Muller変換でガウス分布の乱数を生成
   const generateGaussian = () => {
-    const u1 = seededRandom.random()
-    const u2 = seededRandom.random()
+    const u1 = Math.random()
+    const u2 = Math.random()
     const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2)
     return z0
   }
@@ -506,41 +483,41 @@ export function generateDisasterMarkers(): DisasterMarker[] {
       const position = generateRandomPositionOnLand(city.name)
 
       // ランダムなカテゴリーを選択
-      const randomCategoryIndex = seededRandom.randomInt(0, disasterCategories.length - 1)
+      const randomCategoryIndex = Math.floor(Math.random() * disasterCategories.length)
       const category = disasterCategories[randomCategoryIndex]
 
       // 市町に対応する地名リストからランダムな地名を選択
       const cityPlaceNames = PLACE_NAMES[city.name as keyof typeof PLACE_NAMES] || []
-      const randomPlaceIndex = seededRandom.randomInt(0, cityPlaceNames.length - 1)
+      const randomPlaceIndex = Math.floor(Math.random() * cityPlaceNames.length)
       const placeName = cityPlaceNames[randomPlaceIndex]
 
       // カテゴリーに基づいたタイトルテンプレートを選択
       const titleTemplates =
         DISASTER_TITLE_TEMPLATES[category.id as keyof typeof DISASTER_TITLE_TEMPLATES] || DISASTER_TITLE_TEMPLATES.other
-      const randomTitleIndex = seededRandom.randomInt(0, titleTemplates.length - 1)
+      const randomTitleIndex = Math.floor(Math.random() * titleTemplates.length)
       const titleTemplate = titleTemplates[randomTitleIndex]
 
       // タイトルに地名を挿入
       const title = titleTemplate.replace("○○", placeName)
 
       // ランダムな説明文を選択して地名を挿入
-      const randomDescIndex = seededRandom.randomInt(0, DISASTER_DESCRIPTION_TEMPLATES.length - 1)
+      const randomDescIndex = Math.floor(Math.random() * DISASTER_DESCRIPTION_TEMPLATES.length)
       let description = DISASTER_DESCRIPTION_TEMPLATES[randomDescIndex].replace("○○", placeName)
 
       // 説明文の「約○日」をランダムな日数に置き換え
       if (description.includes("約○日")) {
-        const randomDays = seededRandom.randomInt(1, 30)
+        const randomDays = Math.floor(Math.random() * 30) + 1
         description = description.replace("約○日", `約${randomDays}日`)
       }
 
       // ランダムな深刻度を選択
       const severities: Array<DisasterMarker["severity"]> = ["low", "medium", "high", "critical"]
-      const randomSeverityIndex = seededRandom.randomInt(0, severities.length - 1)
+      const randomSeverityIndex = Math.floor(Math.random() * severities.length)
       const severity = severities[randomSeverityIndex]
 
       // ランダムなステータスを選択
       const statuses: Array<DisasterMarker["status"]> = ["reported", "investigating", "in_progress", "resolved"]
-      const randomStatusIndex = seededRandom.randomInt(0, statuses.length - 1)
+      const randomStatusIndex = Math.floor(Math.random() * statuses.length)
       const status = statuses[randomStatusIndex]
 
       // ランダムな日付を生成

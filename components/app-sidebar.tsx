@@ -55,6 +55,40 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
+          <SidebarGroupLabel>フォーム例</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === "/examples/simple-form"}>
+                  <Link href="/examples/simple-form">
+                    <FileText className="h-4 w-4 mr-2" />
+                    <span>シンプルフォーム</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === "/examples/custom-form"}>
+                  <Link href="/examples/custom-form">
+                    <FileText className="h-4 w-4 mr-2" />
+                    <span>カスタムフォーム</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname === "/examples/contact-form"}>
+                  <Link href="/examples/contact-form">
+                    <FileText className="h-4 w-4 mr-2" />
+                    <span>お問い合わせフォーム</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
           <SidebarGroupLabel>ダッシュボード</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
@@ -97,14 +131,6 @@ export function AppSidebar() {
                   <Link href="/reports">
                     <FileText className="h-4 w-4 mr-2" />
                     <span>報告一覧</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild isActive={pathname === "/reports/damage"}>
-                  <Link href="/reports/damage">
-                    <AlertTriangle className="h-4 w-4 mr-2" />
-                    <span>被害報告</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

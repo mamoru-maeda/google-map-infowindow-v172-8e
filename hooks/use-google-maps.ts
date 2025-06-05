@@ -2,81 +2,111 @@
 
 import { useState, useEffect } from "react"
 
-// グローバル変数でAPIの読み込み状態を管理
-let isLoadingScript = false
-let isScriptLoaded = false
-let scriptLoadCallbacks: Array<() => void> = []
+// Google Maps APIのロード状態を管理するグローバル変数
+let isGoogleMapsScriptLoaded = false
+let googleMapsLoadPromise: Promise<void> | null = null
 
-export function useGoogleMaps(apiKey: string | null) {
+// APIキーが有効かどうかをチェックする関数
+const isValidApiKey = (key: string | null | undefined): boolean => {
+  return !!key && typeof key === "string" && key.trim() !== ""
+}
+
+export function useGoogleMaps(apiKey: string | null | undefined) {
   const [isLoaded, setIsLoaded] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // APIキーがない場合は何もしない
-    if (!apiKey) {
-      return
-    }
-
-    // すでにAPIがロードされている場合
+    // すでにGoogle Maps APIがロードされている場合
     if (window.google && window.google.maps) {
+      console.log("Google Maps APIはすでにロードされています")
       setIsLoaded(true)
       return
     }
 
-    // すでにスクリプトがロードされている場合
-    if (isScriptLoaded) {
-      setIsLoaded(true)
+    // APIキーが無効な場合は何もしない（エラーも設定しない）
+    if (!isValidApiKey(apiKey)) {
+      console.log("APIキーが無効または未設定です。ロードを待機中...", { apiKey })
+      setIsLoaded(false)
+      setError(null)
       return
     }
 
-    // スクリプトがロード中の場合はコールバックを登録
-    if (isLoadingScript) {
-      scriptLoadCallbacks.push(() => setIsLoaded(true))
+    // すでにスクリプトが読み込み中の場合は既存のPromiseを使用
+    if (googleMapsLoadPromise) {
+      googleMapsLoadPromise
+        .then(() => {
+          console.log("既存のGoogle Maps APIロードプロセスが完了しました")
+          setIsLoaded(true)
+          setError(null)
+        })
+        .catch((err) => {
+          console.error("既存のGoogle Maps APIロードプロセスでエラーが発生しました:", err)
+          setError("Google Maps APIのロードに失敗しました")
+        })
       return
     }
 
-    // スクリプトのロードを開始
-    isLoadingScript = true
+    // スクリプトがまだ読み込まれていない場合は新しいPromiseを作成
+    googleMapsLoadPromise = new Promise<void>((resolve, reject) => {
+      try {
+        console.log(`Google Maps APIをロードします (APIキー: ${apiKey?.substring(0, 5)}...)`)
 
-    // コールバック関数名を生成
-    const callbackName = `googleMapsInitCallback_${Math.random().toString(36).substring(2, 9)}`
+        // グローバルコールバック関数を定義
+        window.initGoogleMap = () => {
+          console.log("Google Maps APIのロードが完了しました")
+          isGoogleMapsScriptLoaded = true
+          resolve()
+        }
 
-    // グローバルコールバック関数を定義
-    window[callbackName] = () => {
-      isScriptLoaded = true
-      isLoadingScript = false
-      setIsLoaded(true)
+        // スクリプトを作成
+        const script = document.createElement("script")
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=initGoogleMap`
+        script.async = true
+        script.defer = true
+        script.id = "google-maps-script"
 
-      // 登録されたコールバックを実行
-      scriptLoadCallbacks.forEach((callback) => callback())
-      scriptLoadCallbacks = []
+        // エラーハンドリング
+        script.onerror = (e) => {
+          const errorMessage = e instanceof Error ? e.message : "スクリプトのロードに失敗しました"
+          console.error(`Google Maps APIのロードに失敗しました: ${errorMessage}`)
+          reject(new Error(`Google Maps APIのロードに失敗しました: ${errorMessage}`))
+        }
 
-      // コールバック関数を削除
-      delete window[callbackName]
-    }
+        // DOMに追加
+        document.head.appendChild(script)
+        console.log("Google Maps APIスクリプトをDOMに追加しました")
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error(`Google Maps APIスクリプトの追加に失敗しました: ${errorMessage}`)
+        reject(new Error(`Google Maps APIスクリプトの追加に失敗しました: ${errorMessage}`))
+      }
+    })
 
-    // スクリプトタグを作成
-    const script = document.createElement("script")
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=${callbackName}`
-    script.async = true
-    script.defer = true
-
-    // エラーハンドリング
-    script.onerror = () => {
-      setError("Google Maps APIの読み込みに失敗しました")
-      isLoadingScript = false
-      delete window[callbackName]
-    }
-
-    // スクリプトをDOMに追加
-    document.head.appendChild(script)
+    googleMapsLoadPromise
+      .then(() => {
+        console.log("Google Maps APIのロードが完了しました")
+        setIsLoaded(true)
+        setError(null)
+      })
+      .catch((err) => {
+        console.error("Google Maps APIのロードに失敗しました:", err)
+        setError(err.message || "Google Maps APIのロードに失敗しました")
+        googleMapsLoadPromise = null // エラー時にPromiseをリセット
+      })
 
     // クリーンアップ関数
     return () => {
-      // コンポーネントがアンマウントされた場合、コールバックリストから削除
-      scriptLoadCallbacks = scriptLoadCallbacks.filter((callback) => callback !== (() => setIsLoaded(true)))
+      // スクリプトは削除しない（他のコンポーネントでも使用される可能性があるため）
     }
   }, [apiKey])
 
   return { isLoaded, error }
+}
+
+// グローバル型定義の拡張
+declare global {
+  interface Window {
+    initGoogleMap: () => void
+    google: any
+  }
 }

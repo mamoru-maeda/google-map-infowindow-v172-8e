@@ -1,15 +1,59 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import MapContainer from "@/components/map-container"
 import { disasterCategories } from "@/types/disaster-types"
 import { generateDisasterMarkers } from "@/utils/generate-disaster-markers"
 
 export default function MapPage() {
+  // クライアントサイドレンダリングを確認
+  const [isClient, setIsClient] = useState(false)
+  const [isError, setIsError] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
+
+  useEffect(() => {
+    setIsClient(true)
+
+    // エラーハンドリング
+    const handleError = (event: ErrorEvent) => {
+      console.error("グローバルエラーが発生しました:", event.error)
+      setIsError(true)
+      setErrorMessage(event.message || "マップの読み込み中にエラーが発生しました")
+    }
+
+    window.addEventListener("error", handleError)
+
+    return () => {
+      window.removeEventListener("error", handleError)
+    }
+  }, [])
+
   // 静岡県の中心座標（少し南に調整して全体が見えるように）
   const shizuokaCenterPosition = { lat: 34.95, lng: 138.38 }
 
   // 120個の災害マーカーを生成
   const disasterMarkers = generateDisasterMarkers()
+
+  // エラーが発生した場合はエラーメッセージを表示
+  if (isError) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-between p-4">
+        <div className="w-full max-w-none">
+          <h1 className="text-2xl font-bold mb-4">静岡県災害情報マップ</h1>
+          <div className="p-4 text-red-500 bg-red-50 rounded-md border border-red-200 mb-4">
+            <h3 className="font-bold mb-2">エラーが発生しました</h3>
+            <p>{errorMessage}</p>
+            <button
+              className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              onClick={() => window.location.reload()}
+            >
+              ページを再読み込み
+            </button>
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-between p-4">
@@ -22,12 +66,23 @@ export default function MapPage() {
         </p>
 
         <div className="w-full border rounded-lg overflow-hidden mx-auto" style={{ height: "calc(100vh - 200px)" }}>
-          <MapContainer
-            center={shizuokaCenterPosition}
-            zoom={9}
-            markers={disasterMarkers}
-            categories={disasterCategories}
-          />
+          {isClient ? (
+            <MapContainer
+              center={shizuokaCenterPosition}
+              zoom={9}
+              markers={disasterMarkers}
+              categories={disasterCategories}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="p-4 bg-white rounded-md shadow-md">
+                <p className="mb-2">地図を読み込み中...</p>
+                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                  <div className="bg-blue-600 h-2.5 rounded-full animate-pulse" style={{ width: "100%" }}></div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </main>

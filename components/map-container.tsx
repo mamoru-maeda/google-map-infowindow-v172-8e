@@ -11,6 +11,7 @@ import CloseAllButton from "./close-all-button"
 import { localStorageUtils } from "@/lib/utils"
 import type { MarkerData, InfoWindowState, Category } from "@/types/map-types"
 import { useGoogleMaps } from "@/hooks/use-google-maps"
+import type { google } from "google-maps"
 
 interface MapContainerProps {
   center: {
@@ -22,8 +23,8 @@ interface MapContainerProps {
   categories: Category[]
 }
 
-const STORAGE_KEY = "google-map-infowindows-v13-fixed" // 固定バージョン
-const CATEGORY_FILTER_KEY = "google-map-categories-v13-fixed" // 固定バージョン
+const STORAGE_KEY = "google-map-infowindows-v13"
+const CATEGORY_FILTER_KEY = "google-map-categories-v13"
 
 // グローバルに google 変数を宣言
 declare global {
@@ -41,68 +42,112 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   const [loadError, setLoadError] = useState<string | null>(null)
   const [apiKey, setApiKey] = useState<string | null>(null)
   const [isLoadingApiKey, setIsLoadingApiKey] = useState(true)
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null)
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const [isMapDragging, setIsMapDragging] = useState(false)
   const [isDraggingAny, setIsDraggingAny] = useState(isMapDragging)
   const [currentDraggingId, setCurrentDraggingId] = useState<string | null>(null)
+  const [initAttempts, setInitAttempts] = useState(0)
 
-  const { isLoaded: isGoogleMapsLoaded, error: googleMapsError } = useGoogleMaps(apiKey)
+  // APIキーを取得する関数（サーバーサイドAPIエンドポイントのみ使用）
+  const fetchApiKey = useCallback(async (retryCount = 0): Promise<string | null> => {
+    const maxRetries = 3
 
-  // 既存のuseEffectでエラーを設定
-  useEffect(() => {
-    if (googleMapsError) {
-      setLoadError(googleMapsError)
+    try {
+      console.log(`APIキー取得試行 ${retryCount + 1}/${maxRetries + 1}`)
+
+      // サーバーサイドAPIエンドポイントからAPIキーを取得
+      console.log("APIエンドポイントからAPIキーを取得します")
+      const response = await fetch("/api/maps-key", {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`APIキー取得エラー (${response.status}): ${errorText}`)
+      }
+
+      const data = await response.json()
+
+      if (data.error) {
+        throw new Error(`APIエンドポイントエラー: ${data.error}`)
+      }
+
+      if (!data.apiKey || data.apiKey.trim() === "") {
+        throw new Error("APIキーが返されませんでした")
+      }
+
+      console.log(`APIキーの取得に成功しました (長さ: ${data.apiKey.length})`)
+      return data.apiKey
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error(`APIキーの取得に失敗しました (試行 ${retryCount + 1}): ${errorMessage}`)
+
+      // リトライ
+      if (retryCount < maxRetries) {
+        console.log(`${1000 * (retryCount + 1)}ms後にリトライします...`)
+        await new Promise((resolve) => setTimeout(resolve, 1000 * (retryCount + 1)))
+        return fetchApiKey(retryCount + 1)
+      }
+
+      throw new Error(`APIキーの取得に失敗しました (${maxRetries + 1}回試行): ${errorMessage}`)
     }
-  }, [googleMapsError])
+  }, [])
 
-  // initMapの呼び出しを修正
+  // APIキーを設定
   useEffect(() => {
-    if (apiKey && isGoogleMapsLoaded) {
-      initMap()
-    }
-  }, [apiKey, isGoogleMapsLoaded])
+    let isMounted = true
 
-  // APIキーをフェッチ
-  useEffect(() => {
-    const fetchApiKey = async () => {
+    const initApiKey = async () => {
       try {
         setIsLoadingApiKey(true)
+        setApiKeyError(null)
 
-        const response = await fetch("/api/maps-key")
+        const key = await fetchApiKey()
 
-        if (!response.ok) {
-          const errorText = await response.text()
-          throw new Error(`APIキー取得エラー (${response.status}): ${errorText}`)
+        if (isMounted) {
+          if (key) {
+            setApiKey(key)
+            console.log("APIキーが正常に設定されました")
+          } else {
+            throw new Error("APIキーの取得に失敗しました")
+          }
         }
-
-        const data = await response.json()
-
-        if (data.error) {
-          throw new Error(`APIエンドポイントエラー: ${data.error}`)
-        }
-
-        // デモモードの処理
-        if (data.demoMode) {
-          console.warn("デモモードで実行中:", data.message)
-          setLoadError(`注意: ${data.message}`)
-          // デモモードでも続行できるようにAPIキーを設定
-          setApiKey(data.apiKey)
-        } else if (!data.apiKey) {
-          throw new Error("APIキーが返されませんでした")
-        } else {
-          setApiKey(data.apiKey)
-        }
-
-        setIsLoadingApiKey(false)
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error)
-        setLoadError(`APIキーの取得に失敗しました: ${errorMessage}`)
-        setIsLoadingApiKey(false)
+        console.error(`APIキーの初期化に失敗しました: ${errorMessage}`)
+
+        if (isMounted) {
+          setApiKeyError(errorMessage)
+          setLoadError(`APIキーの取得に失敗しました: ${errorMessage}`)
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingApiKey(false)
+        }
       }
     }
 
-    fetchApiKey()
-  }, [])
+    initApiKey()
+
+    return () => {
+      isMounted = false
+    }
+  }, [fetchApiKey])
+
+  // Google Maps APIをロード（APIキーが取得できた場合のみ）
+  const { isLoaded: isGoogleMapsLoaded, error: googleMapsError } = useGoogleMaps(apiKey)
+
+  // Google Maps APIのエラーを処理
+  useEffect(() => {
+    if (googleMapsError) {
+      console.error("Google Maps APIエラー:", googleMapsError)
+      setLoadError(googleMapsError)
+    }
+  }, [googleMapsError])
 
   // ローカルストレージから吹き出し状態を読み込む
   const loadInfoWindowStates = useCallback(() => {
@@ -127,17 +172,19 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   // マップの初期化
   const initMap = useCallback(() => {
     if (!mapRef.current) {
+      console.error("マップコンテナの参照が見つかりません")
       setLoadError("マップコンテナの参照が見つかりません")
-      return
+      return false
+    }
+
+    if (!window.google || !window.google.maps) {
+      console.error("Google Maps APIが利用できません")
+      setLoadError("Google Maps APIが利用できません")
+      return false
     }
 
     try {
-      // window.googleが存在するか確認
-      if (!window.google || !window.google.maps) {
-        setLoadError("Google Maps APIが利用できません")
-        return
-      }
-
+      console.log("マップインスタンスを作成します")
       const mapOptions = {
         center: { lat: center.lat, lng: center.lng },
         zoom: zoom,
@@ -152,31 +199,29 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
 
       // マップインスタンスを作成
       const mapInstance = new window.google.maps.Map(mapRef.current, mapOptions)
+      console.log("マップインスタンスが作成されました")
 
       setMap(mapInstance)
 
-      // マップ上のどこかをクリックしたら吹き出しを閉じる
+      // マップのイベントリスナーを設定
       mapInstance.addListener("click", () => {
         // Version 13では何もしない
       })
 
-      // マップのドラッグ開始時
       mapInstance.addListener("dragstart", () => {
         setIsMapDragging(true)
       })
 
-      // マップのドラッグ終了時
       mapInstance.addListener("dragend", () => {
         setIsMapDragging(false)
-        // アクティブな吹き出しの位置を更新
         if (Object.keys(activeInfoWindows).length > 0) {
-          // 状態を更新して再レンダリングをトリガー
           setActiveInfoWindows({ ...activeInfoWindows })
         }
       })
 
       // マップがアイドル状態になったら（完全にロードされたら）フラグを設定
       window.google.maps.event.addListenerOnce(mapInstance, "idle", () => {
+        console.log("マップが完全にロードされました")
         setIsMapLoaded(true)
 
         // 保存された吹き出し状態を読み込む
@@ -193,9 +238,13 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
           saveCategoryFilterState(categories.map((cat) => cat.id))
         }
       })
+
+      return true
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error)
+      console.error(`マップの初期化に失敗しました: ${errorMessage}`)
       setLoadError(`マップの初期化に失敗しました: ${errorMessage}`)
+      return false
     }
   }, [
     center,
@@ -207,17 +256,34 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
     activeInfoWindows,
   ])
 
+  // マップの初期化を試みる
+  useEffect(() => {
+    if (isGoogleMapsLoaded && apiKey && mapRef.current && !isMapLoaded && !map) {
+      console.log(`マップの初期化を試みます (試行回数: ${initAttempts + 1})`)
+      const success = initMap()
+
+      if (!success && initAttempts < 3) {
+        // 初期化に失敗した場合、最大3回まで再試行
+        console.log(`マップの初期化に失敗しました。再試行します (${initAttempts + 1}/3)`)
+        const timer = setTimeout(() => {
+          setInitAttempts((prev) => prev + 1)
+        }, 1000)
+        return () => clearTimeout(timer)
+      }
+    }
+  }, [isGoogleMapsLoaded, apiKey, initMap, isMapLoaded, map, initAttempts])
+
   // マーカークリック時のハンドラー
   const handleMarkerClick = useCallback(
     (marker: MarkerData) => {
       setActiveInfoWindows((prev) => {
-        // 既存の状態があれば使用、なければ新規作成（初期状態は最小化）
+        // 既存の状態があれば使用、なければ新規作成
         const updatedState = {
           ...prev,
           [marker.id]: {
             markerId: marker.id,
             position: { ...marker.position }, // マーカーと同じ位置に初期配置
-            isMinimized: true, // 初期状態を最小化に設定
+            isMinimized: prev[marker.id]?.isMinimized || false,
             userPositioned: prev[marker.id]?.userPositioned || false,
           },
         }
@@ -385,35 +451,87 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   if (isLoadingApiKey) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center">
-        <div className="p-4 bg-white rounded-md shadow-md mb-4">APIキーを読み込み中...</div>
-      </div>
-    )
-  }
-
-  // APIキーが取得できなかった場合はエラーメッセージを表示
-  if (!apiKey) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center">
-        <div className="p-4 text-red-500 bg-red-50 rounded-md border border-red-200 mb-4 max-w-2xl">
-          <h3 className="font-bold mb-2">APIキーの取得に失敗しました</h3>
-          <p>環境変数の設定を確認してください。以下の環境変数のいずれかを設定する必要があります：</p>
-          <ul className="list-disc pl-5 mt-2">
-            <li>mamoru_maeda_disaster_key001</li>
-            <li>GOOGLE_MAPS_API_KEY</li>
-          </ul>
-          <p className="mt-2">環境変数の設定方法については、プロジェクトのドキュメントを参照してください。</p>
+        <div className="p-4 bg-white rounded-md shadow-md mb-4">
+          <p className="mb-2">APIキーを読み込み中...</p>
+          <div className="w-full bg-gray-200 rounded-full h-2.5">
+            <div className="bg-blue-600 h-2.5 rounded-full animate-pulse" style={{ width: "100%" }}></div>
+          </div>
         </div>
       </div>
     )
   }
 
-  // エラーがある場合はエラーメッセージを表示
+  // APIキーが取得できなかった場合はエラーメッセージを表示
+  if (apiKeyError || !apiKey) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center">
+        <div className="p-4 text-red-500 bg-red-50 rounded-md border border-red-200 mb-4 max-w-2xl">
+          <h3 className="font-bold mb-2">APIキーの取得に失敗しました</h3>
+          <p className="mb-2">
+            環境変数 GOOGLE_MAPS_API_KEY または mamoru_maeda_disaster_key001 が正しく設定されているか確認してください。
+          </p>
+          {apiKeyError && <p className="mb-2 text-sm bg-red-100 p-2 rounded">エラー詳細: {apiKeyError}</p>}
+          <div className="mt-4 p-2 bg-gray-100 rounded text-sm">
+            <p className="font-semibold">デバッグ情報:</p>
+            <p>APIキー状態: {apiKey ? "取得済み" : "未取得"}</p>
+            <p>エラー状態: {apiKeyError || "なし"}</p>
+            <p className="mt-2 text-xs text-gray-600">
+              注意: セキュリティ上の理由により、環境変数の詳細は表示されません。
+            </p>
+            <button
+              className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              onClick={() => window.location.reload()}
+            >
+              ページを再読み込み
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Google Maps APIのロードに失敗した場合はエラーメッセージを表示
+  if (googleMapsError) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center">
+        <div className="p-4 text-red-500 bg-red-50 rounded-md border border-red-200 mb-4 max-w-2xl">
+          <h3 className="font-bold mb-2">Google Maps APIのロードに失敗しました</h3>
+          <p>{googleMapsError}</p>
+          <p className="mt-2 text-sm">
+            APIキーが有効であることを確認し、ブラウザのコンソールでエラーの詳細を確認してください。
+          </p>
+          <div className="mt-4 p-2 bg-gray-100 rounded text-sm">
+            <p className="font-semibold">デバッグ情報:</p>
+            <p>APIキーの長さ: {apiKey ? apiKey.length : 0} 文字</p>
+            <p>APIキーの先頭: {apiKey ? apiKey.substring(0, 5) + "..." : "なし"}</p>
+          </div>
+          <button
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            onClick={() => window.location.reload()}
+          >
+            ページを再読み込み
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // その他のエラーがある場合はエラーメッセージを表示
   if (loadError) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center">
         <div className="p-4 text-red-500 bg-red-50 rounded-md border border-red-200 mb-4 max-w-2xl">
           <h3 className="font-bold mb-2">エラーが発生しました</h3>
           <p>{loadError}</p>
+          <p className="mt-2 text-sm">
+            このエラーが続く場合は、ページを再読み込みするか、ブラウザのコンソールでエラーの詳細を確認してください。
+          </p>
+          <button
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            onClick={() => window.location.reload()}
+          >
+            ページを再読み込み
+          </button>
         </div>
       </div>
     )
@@ -424,7 +542,17 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
     return (
       <div className="w-full h-full">
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className="p-4 bg-white rounded-md shadow-md mb-4">地図を読み込み中...</div>
+          <div className="p-4 bg-white rounded-md shadow-md mb-4">
+            <p className="mb-2">地図を読み込み中...</p>
+            <div className="w-full bg-gray-200 rounded-full h-2.5">
+              <div className="bg-blue-600 h-2.5 rounded-full animate-pulse" style={{ width: "100%" }}></div>
+            </div>
+            {initAttempts > 0 && (
+              <p className="mt-2 text-sm text-gray-600">
+                読み込みに時間がかかっています (試行回数: {initAttempts + 1}/3)
+              </p>
+            )}
+          </div>
         </div>
         <div ref={mapRef} className="w-full h-full" />
       </div>

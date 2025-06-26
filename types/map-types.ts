@@ -1,18 +1,3 @@
-export interface MarkerData {
-  id: string
-  position: {
-    lat: number
-    lng: number
-  }
-  title: string
-  description: string
-  image?: string
-  category: string
-  severity?: "low" | "medium" | "high" | "critical"
-  reportDate?: string
-  status?: "reported" | "investigating" | "in_progress" | "resolved"
-}
-
 export interface InfoWindowState {
   markerId: string
   position: {
@@ -20,12 +5,9 @@ export interface InfoWindowState {
     lng: number
   }
   isMinimized: boolean
-  userPositioned?: boolean // ユーザーが配置した位置かどうか
-}
-
-export interface Category {
-  id: string
-  name: string
-  color: string
-  description?: string
+  userPositioned: boolean
+  isOrganized?: boolean // 整頓配置されているかどうか
+  organizationRegion?: string // 整頓時の地域
+  organizationIndex?: number // 整頓時のインデックス
+  organizationTotal?: number // 整頓時の同地域総数
 }

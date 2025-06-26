@@ -6,6 +6,8 @@ import { Minimize2, Maximize2, X, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
+import { INFO_WINDOW_SIZES, getMinimizePresetSize, type MinimizePresetKey } from "@/constants/infowindow-sizes"
+import { getCurrentDefaultSize } from "@/hooks/use-infowindow-settings"
 
 interface InfoCardProps {
   title: string
@@ -22,15 +24,6 @@ interface InfoCardProps {
   isOtherDragging?: boolean
 }
 
-// 最小化サイズのプリセット
-const MINIMIZE_PRESETS = {
-  tiny: { width: 100, height: 160, label: "極小", description: "タイトルのみ" },
-  small: { width: 120, height: 180, label: "小", description: "タイトル + 重要度" },
-  medium: { width: 160, height: 210, label: "中", description: "タイトル + バッジ + 画像" },
-  large: { width: 200, height: 280, label: "大", description: "タイトル + 詳細情報" },
-  custom: { width: 150, height: 300, label: "カスタム", description: "自由設定" },
-}
-
 const InfoCard: React.FC<InfoCardProps> = ({
   title,
   description,
@@ -45,21 +38,25 @@ const InfoCard: React.FC<InfoCardProps> = ({
   isDragging = false,
   isOtherDragging = false,
 }) => {
-  const [size, setSize] = useState({ width: 200, height: 280 })
+  // 設定から現在のデフォルトサイズを取得
+  const getInitialSize = () => getCurrentDefaultSize()
+
+  const [size, setSize] = useState(getInitialSize())
   const [isResizing, setIsResizing] = useState(false)
   const [isMinimized, setIsMinimized] = useState(false)
-  const [previousSize, setPreviousSize] = useState({ width: 200, height: 280 })
-  const [minimizePreset, setMinimizePreset] = useState<keyof typeof MINIMIZE_PRESETS>("small")
-  const [customMinimizeSize, setCustomMinimizeSize] = useState({ width: 150, height: 300 })
+  const [previousSize, setPreviousSize] = useState(getInitialSize())
+  const [minimizePreset, setMinimizePreset] = useState<MinimizePresetKey>("small")
+  const [customMinimizeSize, setCustomMinimizeSize] = useState(getMinimizePresetSize("custom"))
   const [showMinimizeSettings, setShowMinimizeSettings] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const constraints = INFO_WINDOW_SIZES.CONSTRAINTS
 
   // 現在の最小化サイズを取得
   const getCurrentMinimizeSize = () => {
     if (minimizePreset === "custom") {
       return customMinimizeSize
     }
-    return MINIMIZE_PRESETS[minimizePreset]
+    return getMinimizePresetSize(minimizePreset)
   }
 
   // 縮小・拡大ボタンの処理
@@ -69,26 +66,29 @@ const InfoCard: React.FC<InfoCardProps> = ({
       setSize(previousSize)
       setIsMinimized(false)
     } else {
-      console.log("🔽 縮小: 最小化状態に変更")
+      console.log("🔽 縮小: デフォルトサイズに変更")
       setPreviousSize(size)
-      const minimizeSize = getCurrentMinimizeSize()
-      setSize({ width: minimizeSize.width, height: minimizeSize.height })
+      // 縮小時は現在のデフォルトサイズに戻す
+      setSize(getCurrentDefaultSize())
       setIsMinimized(true)
     }
   }
 
   // 最小化プリセットの変更
-  const handlePresetChange = (preset: keyof typeof MINIMIZE_PRESETS) => {
+  const handlePresetChange = (preset: MinimizePresetKey) => {
     setMinimizePreset(preset)
     if (isMinimized) {
-      const newSize = preset === "custom" ? customMinimizeSize : MINIMIZE_PRESETS[preset]
+      const newSize = preset === "custom" ? customMinimizeSize : getMinimizePresetSize(preset)
       setSize({ width: newSize.width, height: newSize.height })
     }
   }
 
   // カスタムサイズの変更
   const handleCustomSizeChange = (dimension: "width" | "height", value: number) => {
-    const clampedValue = dimension === "width" ? Math.max(80, Math.min(400, value)) : Math.max(30, Math.min(500, value))
+    const clampedValue =
+      dimension === "width"
+        ? Math.max(constraints.MIN_WIDTH, Math.min(constraints.MAX_WIDTH, value))
+        : Math.max(constraints.MIN_HEIGHT, Math.min(constraints.MAX_HEIGHT, value))
 
     const newCustomSize = { ...customMinimizeSize, [dimension]: clampedValue }
     setCustomMinimizeSize(newCustomSize)
@@ -117,8 +117,8 @@ const InfoCard: React.FC<InfoCardProps> = ({
       const deltaX = e.clientX - startX
       const deltaY = e.clientY - startY
 
-      const newWidth = Math.max(120, Math.min(600, startWidth + deltaX))
-      const newHeight = Math.max(100, Math.min(500, startHeight + deltaY))
+      const newWidth = Math.max(constraints.MIN_WIDTH, Math.min(constraints.MAX_WIDTH, startWidth + deltaX))
+      const newHeight = Math.max(constraints.MIN_HEIGHT, Math.min(constraints.MAX_HEIGHT, startHeight + deltaY))
 
       setSize({ width: newWidth, height: newHeight })
     }
@@ -168,10 +168,25 @@ const InfoCard: React.FC<InfoCardProps> = ({
 
   const severityInfo = getSeverityInfo()
   const statusInfo = getStatusInfo()
-  const currentPreset = MINIMIZE_PRESETS[minimizePreset]
+  const currentPreset = INFO_WINDOW_SIZES.MINIMIZE_PRESETS[minimizePreset]
 
-  // ヘッダーの高さを統一（48px固定）
-  const HEADER_HEIGHT = 48
+  // フォントサイズを計算する関数を追加（コンポーネントの先頭付近に）
+  const calculateFontSizes = () => {
+    const baseWidth = getCurrentDefaultSize().width // 基準となる幅を現在のデフォルトサイズに変更
+    const baseHeight = getCurrentDefaultSize().height // 基準となる高さを現在のデフォルトサイズに変更
+    const currentArea = size.width * size.height
+    const baseArea = baseWidth * baseHeight
+    const scaleFactor = Math.sqrt(currentArea / baseArea)
+
+    return {
+      title: Math.max(12, Math.min(18, 14 * scaleFactor)),
+      description: Math.max(11, Math.min(16, 13 * scaleFactor)),
+      badge: Math.max(10, Math.min(14, 11 * scaleFactor)),
+      date: Math.max(10, Math.min(13, 11 * scaleFactor)),
+    }
+  }
+
+  const fontSizes = calculateFontSizes()
 
   return (
     <div
@@ -187,10 +202,12 @@ const InfoCard: React.FC<InfoCardProps> = ({
         height: `${size.height}px`,
         userSelect: "none",
         WebkitUserSelect: "none",
-        MozUserSelect: "none",
+        MozUserUserSelect: "none",
         msUserSelect: "none",
         transition: isDragging || isResizing ? "none" : "all 0.3s ease-in-out",
         overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
       {/* 最小化設定パネル */}
@@ -200,14 +217,14 @@ const InfoCard: React.FC<InfoCardProps> = ({
 
           {/* プリセット選択 */}
           <div className="space-y-2 mb-3">
-            {Object.entries(MINIMIZE_PRESETS).map(([key, preset]) => (
+            {Object.entries(INFO_WINDOW_SIZES.MINIMIZE_PRESETS).map(([key, preset]) => (
               <label key={key} className="flex items-center space-x-2 cursor-pointer">
                 <input
                   type="radio"
                   name="minimizePreset"
                   value={key}
                   checked={minimizePreset === key}
-                  onChange={() => handlePresetChange(key as keyof typeof MINIMIZE_PRESETS)}
+                  onChange={() => handlePresetChange(key as MinimizePresetKey)}
                   className="text-blue-500"
                 />
                 <div className="flex-1">
@@ -229,8 +246,8 @@ const InfoCard: React.FC<InfoCardProps> = ({
                   <div className="relative">
                     <input
                       type="number"
-                      min="80"
-                      max="400"
+                      min={constraints.MIN_WIDTH}
+                      max={constraints.MAX_WIDTH}
                       step="10"
                       value={customMinimizeSize.width}
                       onChange={(e) => {
@@ -239,7 +256,7 @@ const InfoCard: React.FC<InfoCardProps> = ({
                       }}
                       onBlur={(e) => {
                         const value = e.target.value === "" ? 80 : Number.parseInt(e.target.value)
-                        const clampedValue = Math.max(80, Math.min(400, value))
+                        const clampedValue = Math.max(constraints.MIN_WIDTH, Math.min(constraints.MAX_WIDTH, value))
                         if (value !== clampedValue) {
                           handleCustomSizeChange("width", clampedValue)
                         }
@@ -272,8 +289,8 @@ const InfoCard: React.FC<InfoCardProps> = ({
                   <div className="relative">
                     <input
                       type="number"
-                      min="30"
-                      max="500"
+                      min={constraints.MIN_HEIGHT}
+                      max={constraints.MAX_HEIGHT}
                       step="10"
                       value={customMinimizeSize.height}
                       onChange={(e) => {
@@ -282,7 +299,7 @@ const InfoCard: React.FC<InfoCardProps> = ({
                       }}
                       onBlur={(e) => {
                         const value = e.target.value === "" ? 30 : Number.parseInt(e.target.value)
-                        const clampedValue = Math.max(30, Math.min(500, value))
+                        const clampedValue = Math.max(constraints.MIN_HEIGHT, Math.min(constraints.MAX_HEIGHT, value))
                         if (value !== clampedValue) {
                           handleCustomSizeChange("height", clampedValue)
                         }
@@ -317,9 +334,9 @@ const InfoCard: React.FC<InfoCardProps> = ({
               <div className="mt-1 flex gap-1">
                 <button
                   onClick={() => {
-                    setCustomMinimizeSize({ width: 150, height: 300 })
+                    setCustomMinimizeSize(getMinimizePresetSize("custom"))
                     if (isMinimized && minimizePreset === "custom") {
-                      setSize({ width: 150, height: 300 })
+                      setSize(getMinimizePresetSize("custom"))
                     }
                   }}
                   className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded"
@@ -353,17 +370,30 @@ const InfoCard: React.FC<InfoCardProps> = ({
 
       {/* ヘッダー - 高さを統一 */}
       <div
-        className="flex justify-between items-center bg-gray-50 border-b rounded-t-lg"
-        style={{ height: `${HEADER_HEIGHT}px`, padding: "0 12px" }}
+        className="flex justify-between items-start bg-gray-50 border-b rounded-t-lg"
+        style={{ minHeight: "48px", padding: "8px 12px" }}
       >
-        <div className="flex items-center space-x-2 overflow-hidden flex-1">
+        <div className="flex items-start space-x-2 overflow-hidden flex-1 pr-2">
           {category && (
-            <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: categoryColor }} />
+            <span className="w-3 h-3 rounded-full flex-shrink-0 mt-1" style={{ backgroundColor: categoryColor }} />
           )}
-          <h3 className="font-medium text-gray-800 truncate text-sm">{title}</h3>
+          <h3
+            className="font-medium text-gray-800 text-sm leading-tight"
+            style={{
+              fontSize: `${fontSizes.title}px`,
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              wordBreak: "break-word",
+              lineHeight: "1.3",
+            }}
+          >
+            {title}
+          </h3>
         </div>
 
-        <div className="flex items-center space-x-1 flex-shrink-0">
+        <div className="flex items-start space-x-1 flex-shrink-0 mt-1">
           {/* 最小化設定ボタン - 最小化時は非表示 */}
           {!isMinimized && (
             <Button
@@ -383,9 +413,11 @@ const InfoCard: React.FC<InfoCardProps> = ({
             size="icon"
             className="h-6 w-6 text-gray-500 hover:text-blue-500"
             onClick={handleToggleMinimize}
-            aria-label={isMinimized ? "拡大" : "縮小"}
+            aria-label={isMinimized ? "拡大" : "デフォルトサイズに戻す"}
             title={
-              isMinimized ? `拡大 (${previousSize.width}×${previousSize.height})` : `縮小 (${currentPreset.label})`
+              isMinimized
+                ? `拡大 (${previousSize.width}×${previousSize.height})`
+                : `デフォルトサイズに戻す (${getCurrentDefaultSize().width}×${getCurrentDefaultSize().height})`
             }
           >
             {isMinimized ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
@@ -406,7 +438,7 @@ const InfoCard: React.FC<InfoCardProps> = ({
       </div>
 
       {/* コンテンツ */}
-      <div className="relative rounded-b-lg overflow-hidden" style={{ height: `${size.height - HEADER_HEIGHT}px` }}>
+      <div className="relative rounded-b-lg overflow-hidden flex-1">
         <div className="p-3 h-full overflow-auto">
           {image && (
             <div className="mb-2">
@@ -414,7 +446,10 @@ const InfoCard: React.FC<InfoCardProps> = ({
                 src={image || "/placeholder.svg"}
                 alt={title}
                 className="w-full object-cover rounded"
-                style={{ height: Math.max(60, (size.height - HEADER_HEIGHT) * 0.3) + "px" }}
+                style={{
+                  height: Math.max(100, Math.min(400, (size.height - 48) * 0.55)) + "px",
+                  aspectRatio: "4/3", // 縦横比を4:3に変更
+                }}
                 onError={(e) => {
                   e.currentTarget.src = "/generic-location.png"
                 }}
@@ -424,14 +459,35 @@ const InfoCard: React.FC<InfoCardProps> = ({
           )}
 
           <div className="mb-2 flex flex-wrap gap-1">
-            {severity && <Badge className={severityInfo.color}>{severityInfo.label}</Badge>}
-            {status && <Badge className={statusInfo.color}>{statusInfo.label}</Badge>}
-            {city && <Badge variant="outline">{city}</Badge>}
+            {severity && (
+              <Badge className={severityInfo.color} style={{ fontSize: `${fontSizes.badge}px` }}>
+                {severityInfo.label}
+              </Badge>
+            )}
+            {status && (
+              <Badge className={statusInfo.color} style={{ fontSize: `${fontSizes.badge}px` }}>
+                {statusInfo.label}
+              </Badge>
+            )}
+            {city && (
+              <Badge variant="outline" style={{ fontSize: `${fontSizes.badge}px` }}>
+                {city}
+              </Badge>
+            )}
           </div>
 
-          {reportDate && <div className="mb-2 text-xs text-gray-500">報告日: {reportDate}</div>}
+          {reportDate && (
+            <div className="mb-2 text-xs text-gray-500" style={{ fontSize: `${fontSizes.date}px` }}>
+              受信日: {reportDate}
+            </div>
+          )}
 
-          <p className="text-sm text-gray-600 break-words">{description}</p>
+          <p
+            className="text-sm text-gray-600 break-words"
+            style={{ fontSize: `${fontSizes.description}px`, lineHeight: "1.4" }}
+          >
+            {description}
+          </p>
         </div>
       </div>
 
@@ -467,7 +523,10 @@ const InfoCard: React.FC<InfoCardProps> = ({
       {/* 最小化状態インジケーター */}
       {isMinimized && (
         <div className="absolute bottom-1 right-1">
-          <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" title={`最小化中 (${currentPreset.label})`} />
+          <div
+            className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"
+            title={`デフォルトサイズ表示中 (${getCurrentDefaultSize().width}×${getCurrentDefaultSize().height})`}
+          />
         </div>
       )}
     </div>

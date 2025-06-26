@@ -5,6 +5,7 @@ import { useState, useRef } from "react"
 import { ArrowUpIcon as ArrowsOut, ArrowsUpFromLineIcon as ArrowsIn, X, CornerRightDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { INFO_WINDOW_SIZES, getDefaultSize } from "@/constants/infowindow-sizes"
 
 interface InfoWindowProps {
   title: string
@@ -15,7 +16,7 @@ interface InfoWindowProps {
 
 const InfoWindow: React.FC<InfoWindowProps> = ({ title, description, image, onClose }) => {
   const [isMinimized, setIsMinimized] = useState(false)
-  const [size, setSize] = useState({ width: 176, height: 200 })
+  const [size, setSize] = useState(getDefaultSize())
   const [isDragging, setIsDragging] = useState(false)
   const [showInstructions, setShowInstructions] = useState(true)
   const [resizeHandleColor, setResizeHandleColor] = useState("orange") // デフォルト色
@@ -102,8 +103,9 @@ const InfoWindow: React.FC<InfoWindowProps> = ({ title, description, image, onCl
       const deltaX = e.clientX - startX
       const deltaY = e.clientY - startY
 
-      const newWidth = Math.max(120, Math.min(600, startWidth + deltaX))
-      const newHeight = Math.max(100, Math.min(500, startHeight + deltaY))
+      const constraints = INFO_WINDOW_SIZES.CONSTRAINTS
+      const newWidth = Math.max(constraints.MIN_WIDTH, Math.min(constraints.MAX_WIDTH, startWidth + deltaX))
+      const newHeight = Math.max(constraints.MIN_HEIGHT, Math.min(constraints.MAX_HEIGHT, startHeight + deltaY))
 
       setSize({ width: newWidth, height: newHeight })
       console.log(`📏 サイズ: ${newWidth}×${newHeight}`)
@@ -122,7 +124,7 @@ const InfoWindow: React.FC<InfoWindowProps> = ({ title, description, image, onCl
 
   // ダブルクリックでデフォルトサイズに戻す
   const handleDoubleClick = () => {
-    setSize({ width: 176, height: 200 })
+    setSize(getDefaultSize())
     console.log("🔄 デフォルトサイズに戻しました")
   }
 

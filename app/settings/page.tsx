@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
+import InfoWindowSizeSettings from "@/components/infowindow-size-settings"
 
 export default function SettingsPage() {
   return (
@@ -11,9 +12,10 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-bold mb-6">設定</h1>
 
       <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-3 max-w-md">
+        <TabsList className="grid w-full grid-cols-4 max-w-lg">
           <TabsTrigger value="general">一般</TabsTrigger>
           <TabsTrigger value="notifications">通知</TabsTrigger>
+          <TabsTrigger value="infowindow">吹き出し</TabsTrigger>
           <TabsTrigger value="account">アカウント</TabsTrigger>
         </TabsList>
 
@@ -88,6 +90,10 @@ export default function SettingsPage() {
               <Button>保存</Button>
             </CardFooter>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="infowindow" className="mt-6">
+          <InfoWindowSizeSettings />
         </TabsContent>
 
         <TabsContent value="account" className="mt-6">

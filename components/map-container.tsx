@@ -9,10 +9,14 @@ import CategoryFilter from "./category-filter"
 import AutoArrangeButton from "./auto-arrange-button"
 import CloseAllButton from "./close-all-button"
 import OrganizeButton from "./organize-button"
+import CameraButton from "./camera-button"
+import HistoryPanel from "./history-panel"
 import { localStorageUtils } from "@/lib/utils"
 import type { MarkerData, InfoWindowState, Category } from "@/types/map-types"
+import type { MapSnapshot } from "@/types/snapshot-types"
 import { useGoogleMaps } from "@/hooks/use-google-maps"
-import { getEdgeAlignedPositions, getClosestMapEdge, adjustToClosestEdge } from "@/utils/region-utils"
+import { useSnapshots } from "@/hooks/use-snapshots"
+import { getEdgeAlignedPositions, getClosestMapEdge } from "@/utils/region-utils"
 import { getCurrentDefaultSize } from "@/hooks/use-infowindow-settings"
 
 interface MapContainerProps {
@@ -51,8 +55,8 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   const [currentDraggingId, setCurrentDraggingId] = useState<string | null>(null)
   const [initAttempts, setInitAttempts] = useState(0)
 
-  // 地図サイズ管理フック
-  // const { mapSize, setMapSize, getMapSize, isResizing } = useMapSize(mapRef, map)
+  // スナップショット管理フックを使用
+  const { snapshots, saveSnapshot, deleteSnapshot, updateSnapshotTitle, clearAllSnapshots } = useSnapshots()
 
   // APIキーを取得する関数（サーバーサイドAPIエンドポイントのみ使用）
   const fetchApiKey = useCallback(async (retryCount = 0): Promise<string | null> => {
@@ -174,36 +178,102 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
     localStorageUtils.saveData(CATEGORY_FILTER_KEY, categories)
   }, [])
 
-  // 整頓された吹き出しの位置を再計算する関数
-  const recalculateOrganizedPositions = useCallback(() => {
-    if (!map) {
-      console.log("🔄 地図インスタンスが利用できません")
-      return
+  // 吹き出しを地図の10ピクセル内側に調整する関数
+  const adjustToMapEdge = useCallback((lat: number, lng: number, map: any) => {
+    const bounds = map.getBounds()
+    const mapDiv = map.getDiv()
+
+    if (!bounds || !mapDiv) {
+      console.error("❌ 地図の境界またはDOMエレメントを取得できません")
+      return { lat, lng }
     }
 
-    // 整頓された吹き出しを抽出
-    const organizedInfoWindows = Object.entries(activeInfoWindows).filter(([_, infoWindow]) => infoWindow.isOrganized)
+    const ne = bounds.getNorthEast()
+    const sw = bounds.getSouthWest()
+    const mapWidth = ne.lng() - sw.lng()
+    const mapHeight = ne.lat() - sw.lat()
 
-    if (organizedInfoWindows.length === 0) {
-      console.log("📍 整頓された吹き出しがありません")
-      return
+    // 地図のピクセルサイズを取得
+    const mapPixelWidth = mapDiv.offsetWidth
+    const mapPixelHeight = mapDiv.offsetHeight
+
+    // ピクセルサイズを緯度経度に変換するための係数
+    const lngPerPixel = mapWidth / mapPixelWidth
+    const latPerPixel = mapHeight / mapPixelHeight
+
+    // 吹き出しサイズを取得
+    const currentSize = getCurrentDefaultSize()
+    const infoWindowWidth = currentSize.width
+    const infoWindowHeight = currentSize.height
+
+    // 固定の10ピクセルマージン
+    const marginPixels = 10
+    const marginLng = marginPixels * lngPerPixel
+    const marginLat = marginPixels * latPerPixel
+
+    // 吹き出しサイズを緯度経度に変換
+    const infoWindowWidthLng = infoWindowWidth * lngPerPixel
+    const infoWindowHeightLat = infoWindowHeight * latPerPixel
+
+    console.log(`🎯 手動移動後の自動調整: (${lat.toFixed(6)}, ${lng.toFixed(6)})`)
+
+    // 地図の各辺との距離を計算
+    const distanceToTop = ne.lat() - lat
+    const distanceToBottom = lat - sw.lat()
+    const distanceToRight = ne.lng() - lng
+    const distanceToLeft = lng - sw.lng()
+
+    // 最も近い辺を判定
+    const minDistance = Math.min(distanceToTop, distanceToBottom, distanceToRight, distanceToLeft)
+
+    let adjustedPosition: { lat: number; lng: number }
+
+    if (minDistance === distanceToTop) {
+      // 上辺に最も近い：吹き出しの上辺が地図上辺から10px内側になるように配置
+      adjustedPosition = {
+        lat: ne.lat() - marginLat - infoWindowHeightLat / 2,
+        lng: lng, // 経度はそのまま維持
+      }
+      console.log(`🔝 上辺に調整: (${adjustedPosition.lat.toFixed(6)}, ${adjustedPosition.lng.toFixed(6)})`)
+    } else if (minDistance === distanceToBottom) {
+      // 下辺に最も近い：吹き出しの下辺が地図下辺から10px内側になるように配置
+      adjustedPosition = {
+        lat: sw.lat() + marginLat + infoWindowHeightLat / 2,
+        lng: lng, // 経度はそのまま維持
+      }
+      console.log(`🔽 下辺に調整: (${adjustedPosition.lat.toFixed(6)}, ${adjustedPosition.lng.toFixed(6)})`)
+    } else if (minDistance === distanceToLeft) {
+      // 左辺に最も近い：吹き出しの左辺が地図左辺から10px内側になるように配置
+      adjustedPosition = {
+        lat: lat, // 緯度はそのまま維持
+        lng: sw.lng() + marginLng + infoWindowWidthLng / 2,
+      }
+      console.log(`◀️ 左辺に調整: (${adjustedPosition.lat.toFixed(6)}, ${adjustedPosition.lng.toFixed(6)})`)
+    } else {
+      // 右辺に最も近い：吹き出しの右辺が地図右辺から10px内側になるように配置
+      adjustedPosition = {
+        lat: lat, // 緯度はそのまま維持
+        lng: ne.lng() - marginLng - infoWindowWidthLng / 2,
+      }
+      console.log(`▶️ 右辺に調整: (${adjustedPosition.lat.toFixed(6)}, ${adjustedPosition.lng.toFixed(6)})`)
     }
 
-    console.log(`🔄 ${organizedInfoWindows.length}個の整頓された吹き出しの位置を維持します（再計算なし）`)
+    // 調整後の位置が地図境界内に収まっているかチェック
+    const finalLat = Math.max(
+      sw.lat() + marginLat + infoWindowHeightLat / 2,
+      Math.min(ne.lat() - marginLat - infoWindowHeightLat / 2, adjustedPosition.lat),
+    )
+    const finalLng = Math.max(
+      sw.lng() + marginLng + infoWindowWidthLng / 2,
+      Math.min(ne.lng() - marginLng - infoWindowWidthLng / 2, adjustedPosition.lng),
+    )
 
-    // 整頓された吹き出しの位置は変更しない
-    // ユーザーが手動で整列ボタンを押した時のみ位置を変更する
-  }, [map, activeInfoWindows])
+    const finalPosition = { lat: finalLat, lng: finalLng }
 
-  // 地図サイズ変更時に整頓された吹き出しの位置を再計算
-  // useEffect(() => {
-  //   if (map && isMapLoaded && !isResizing) {
-  //     const timer = setTimeout(() => {
-  //       recalculateOrganizedPositions()
-  //     }, 200)
-  //     return () => clearTimeout(timer)
-  //   }
-  // }, [mapSize, map, isMapLoaded, isResizing, recalculateOrganizedPositions])
+    console.log(`✅ 最終調整位置: (${finalPosition.lat.toFixed(6)}, ${finalPosition.lng.toFixed(6)})`)
+
+    return finalPosition
+  }, [])
 
   // マップの初期化
   const initMap = useCallback(() => {
@@ -250,32 +320,6 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
 
       mapInstance.addListener("dragend", () => {
         setIsMapDragging(false)
-        // 地図移動後の自動再計算を無効化
-        // setTimeout(() => {
-        //   recalculateOrganizedPositions()
-        // }, 200)
-      })
-
-      // ズーム変更時の自動再計算を無効化
-      mapInstance.addListener("zoom_changed", () => {
-        // setTimeout(() => {
-        //   recalculateOrganizedPositions()
-        // }, 200)
-      })
-
-      // 地図サイズ変更時の自動再計算を無効化
-      mapInstance.addListener("resize", () => {
-        // setTimeout(() => {
-        //   recalculateOrganizedPositions()
-        // }, 300)
-      })
-
-      // 地図が完全に停止した時の自動再計算を無効化
-      mapInstance.addListener("idle", () => {
-        // アイドル状態になった時の自動再計算を無効化
-        // setTimeout(() => {
-        //   recalculateOrganizedPositions()
-        // }, 100)
       })
 
       // マップがアイドル状態になったら（完全にロードされたら）フラグを設定
@@ -305,15 +349,7 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
       setLoadError(`マップの初期化に失敗しました: ${errorMessage}`)
       return false
     }
-  }, [
-    center,
-    zoom,
-    loadInfoWindowStates,
-    categories,
-    loadCategoryFilterState,
-    saveCategoryFilterState,
-    recalculateOrganizedPositions,
-  ])
+  }, [center, zoom, loadInfoWindowStates, categories, loadCategoryFilterState, saveCategoryFilterState])
 
   // マップの初期化を試みる
   useEffect(() => {
@@ -402,60 +438,23 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
       )
 
       // 最も近い辺に10ピクセル内側に自動調整
-      const adjustedPosition = adjustToClosestEdge(draggedLat, draggedLng, map)
-      console.log(
-        `🎯 自動調整後: ${markerId} を (${adjustedPosition.lat.toFixed(6)}, ${adjustedPosition.lng.toFixed(6)}) に調整`,
-      )
-
-      // 他の吹き出しとの重なりをチェック
-      const otherInfoWindows = Object.entries(activeInfoWindows).filter(([id]) => id !== markerId)
-      const existingBounds = otherInfoWindows.map(([id, infoWindow]) =>
-        calculateInfoWindowBounds(infoWindow.position.lat, infoWindow.position.lng, map, id),
-      )
-
-      // 調整後の位置での境界ボックスを計算
-      const adjustedBounds = calculateInfoWindowBounds(adjustedPosition.lat, adjustedPosition.lng, map, markerId)
-
-      // 重なりチェック
-      let hasOverlap = false
-      let overlapWith = ""
-      for (const existingBound of existingBounds) {
-        if (checkOverlap(adjustedBounds, existingBound)) {
-          hasOverlap = true
-          overlapWith = existingBound.id
-          break
-        }
-      }
-
-      let finalPosition = adjustedPosition
-
-      if (hasOverlap) {
-        console.log(`⚠️ 自動調整後に重なり検出: ${markerId} が ${overlapWith} と重なります`)
-        // 重なりを回避する位置を計算
-        const overlapAvoidedPosition = adjustPositionToAvoidOverlap(adjustedBounds, existingBounds, map, 30)
-        finalPosition = overlapAvoidedPosition
-        console.log(
-          `🔧 重なり回避: ${markerId} を位置 (${overlapAvoidedPosition.lat.toFixed(6)}, ${overlapAvoidedPosition.lng.toFixed(6)}) に再調整`,
-        )
-      } else {
-        console.log(`✅ 自動調整OK: ${markerId} は重なりなし`)
-      }
+      const adjustedPosition = adjustToMapEdge(draggedLat, draggedLng, map)
 
       setActiveInfoWindows((prev) => {
         const updatedState = {
           ...prev,
           [markerId]: {
             ...prev[markerId],
-            position: finalPosition,
-            userPositioned: true, // ユーザーが配置した位置であることを記録
-            isOrganized: false, // 手動移動により整頓状態を解除
+            position: adjustedPosition,
+            userPositioned: true,
+            isOrganized: false,
           },
         }
         saveInfoWindowStates(updatedState)
         return updatedState
       })
     },
-    [saveInfoWindowStates, map, activeInfoWindows],
+    [saveInfoWindowStates, map, adjustToMapEdge],
   )
 
   // 吹き出しの最小化切り替えハンドラー
@@ -595,7 +594,6 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
       console.log("🔄 整頓状態をリセットしました")
 
       // 辺配置位置を計算
-      // 辺配置位置を計算（現在の吹き出し位置を使用）
       console.log("🔧 辺配置位置を計算中（現在の吹き出し位置基準）...")
       const edgePositions = getEdgeAlignedPositions(activeInfoWindows, map)
       console.log(`✅ ${Object.keys(edgePositions).length}個の位置を計算しました`)
@@ -643,6 +641,84 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
     }
   }, [map, markers, selectedCategories, activeInfoWindows, saveInfoWindowStates])
 
+  // スナップショット保存ハンドラー
+  const handleTakeSnapshot = useCallback(
+    (title: string) => {
+      console.log("📸 handleTakeSnapshot が呼び出されました", { title, activeInfoWindowCount })
+
+      if (!map) {
+        console.error("❌ 地図インスタンスが利用できません")
+        return
+      }
+
+      console.log(`📸 スナップショット保存開始: "${title}"`)
+
+      try {
+        const center = map.getCenter()
+        const zoom = map.getZoom()
+
+        console.log("📸 地図情報取得:", {
+          center: { lat: center.lat(), lng: center.lng() },
+          zoom,
+          activeInfoWindows: Object.keys(activeInfoWindows).length,
+          selectedCategories: selectedCategories.length,
+        })
+
+        const snapshot = saveSnapshot(
+          title,
+          activeInfoWindows,
+          { lat: center.lat(), lng: center.lng() },
+          zoom,
+          selectedCategories,
+        )
+
+        console.log(`✅ スナップショット保存完了: "${snapshot.title}"`, snapshot)
+      } catch (error) {
+        console.error("❌ スナップショット保存エラー:", error)
+      }
+    },
+    [map, activeInfoWindows, selectedCategories, saveSnapshot],
+  )
+
+  // スナップショット復元ハンドラー
+  const handleRestoreSnapshot = useCallback(
+    (snapshot: MapSnapshot) => {
+      console.log("🔄 handleRestoreSnapshot が呼び出されました", snapshot)
+
+      if (!map) {
+        console.error("❌ 地図インスタンスが利用できません")
+        return
+      }
+
+      console.log(`🔄 スナップショット復元開始: "${snapshot.title}"`, snapshot)
+
+      try {
+        // 地図の位置とズームを復元
+        const center = new window.google.maps.LatLng(snapshot.mapCenter.lat, snapshot.mapCenter.lng)
+        map.setCenter(center)
+        map.setZoom(snapshot.mapZoom)
+        console.log(
+          `🗺️ 地図位置復元: (${snapshot.mapCenter.lat}, ${snapshot.mapCenter.lng}), ズーム: ${snapshot.mapZoom}`,
+        )
+
+        // カテゴリーフィルターを復元
+        setSelectedCategories(snapshot.selectedCategories)
+        saveCategoryFilterState(snapshot.selectedCategories)
+        console.log(`🏷️ カテゴリーフィルター復元: ${snapshot.selectedCategories.length}個`, snapshot.selectedCategories)
+
+        // 吹き出し状態を復元
+        setActiveInfoWindows(snapshot.infoWindows)
+        saveInfoWindowStates(snapshot.infoWindows)
+        console.log(`💬 吹き出し状態復元: ${Object.keys(snapshot.infoWindows).length}個`, snapshot.infoWindows)
+
+        console.log(`✅ スナップショット復元完了: "${snapshot.title}"`)
+      } catch (error) {
+        console.error(`❌ スナップショット復元エラー:`, error)
+      }
+    },
+    [map, saveCategoryFilterState, saveInfoWindowStates],
+  )
+
   // フィルタリングされたマーカー
   const filteredMarkers = markers.filter((marker) => selectedCategories.includes(marker.category))
 
@@ -652,7 +728,7 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   // 吹き出しが表示されているマーカーのIDリスト
   const activeMarkerIds = Object.keys(activeInfoWindows)
 
-  // 表示されている吹き出しの数
+  // 表示されている吹き出しの数（派生値）
   const activeInfoWindowCount = activeMarkerIds.length
 
   // APIキーがロード中の場合はローディングメッセージを表示
@@ -767,132 +843,6 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
     )
   }
 
-  // --- ここから置き換え ---
-  // Function to calculate the bounds of an InfoWindow
-  const calculateInfoWindowBounds = (lat: number, lng: number, map: any, id: string) => {
-    const projection = map.getProjection()
-    if (!projection) {
-      // プロジェクションがまだ取得できない場合は空の境界を返す
-      return {
-        north: lat,
-        south: lat,
-        east: lng,
-        west: lng,
-        width: 250,
-        height: 200,
-        id,
-      }
-    }
-
-    // ========= ピクセル座標を算出 =========
-    const scale = Math.pow(2, map.getZoom() || 0)
-    const centerPoint = projection.fromLatLngToPoint(map.getCenter() as any)
-    const worldPoint = projection.fromLatLngToPoint(new window.google.maps.LatLng(lat, lng))
-
-    const mapDiv = map.getDiv()
-    const mapWidth = mapDiv.offsetWidth
-    const mapHeight = mapDiv.offsetHeight
-
-    const pixelX = (worldPoint.x - centerPoint.x) * scale + mapWidth / 2
-    const pixelY = (worldPoint.y - centerPoint.y) * scale + mapHeight / 2
-
-    // ========= InfoWindow のサイズ =========
-    const boundsSize = getCurrentDefaultSize()
-    const infoWindowWidth = boundsSize.width
-    const infoWindowHeight = boundsSize.height
-
-    // 左上 & 右下ピクセル
-    const topLeftPixel = { x: pixelX - infoWindowWidth / 2, y: pixelY - infoWindowHeight }
-    const bottomRightPixel = { x: pixelX + infoWindowWidth / 2, y: pixelY }
-
-    // ピクセル ➜ LatLng へ戻す
-    const topLeftWorld = {
-      x: (topLeftPixel.x - mapWidth / 2) / scale + centerPoint.x,
-      y: (topLeftPixel.y - mapHeight / 2) / scale + centerPoint.y,
-    }
-    const bottomRightWorld = {
-      x: (bottomRightPixel.x - mapWidth / 2) / scale + centerPoint.x,
-      y: (bottomRightPixel.y - mapHeight / 2) / scale + centerPoint.y,
-    }
-
-    const topLeftLatLng = projection.fromPointToLatLng(new window.google.maps.Point(topLeftWorld.x, topLeftWorld.y))
-    const bottomRightLatLng = projection.fromPointToLatLng(
-      new window.google.maps.Point(bottomRightWorld.x, bottomRightWorld.y),
-    )
-
-    return {
-      north: topLeftLatLng.lat(),
-      south: bottomRightLatLng.lat(),
-      east: bottomRightLatLng.lng(),
-      west: topLeftLatLng.lng(),
-      width: infoWindowWidth,
-      height: infoWindowHeight,
-      id,
-    }
-  }
-  // --- ここまで置き換え ---
-
-  // Function to check if two bounds overlap
-  const checkOverlap = (bounds1: any, bounds2: any) => {
-    return !(
-      bounds1.east < bounds2.west ||
-      bounds1.west > bounds2.east ||
-      bounds1.north < bounds2.south ||
-      bounds1.south > bounds2.north
-    )
-  }
-
-  // Function to adjust the position to avoid overlap
-  const adjustPositionToAvoidOverlap = (newBounds: any, existingBounds: any, map: any, offsetInPixels: number) => {
-    const adjustedLat = newBounds.north
-    let adjustedLng = newBounds.west
-
-    // とりあえず右にずらす
-    adjustedLng = adjustedLng + (offsetInPixels / newBounds.width) * (newBounds.east - newBounds.west)
-
-    return { lat: adjustedLat, lng: adjustedLng }
-  }
-
-  // 吹き出しを指定された辺の内側に調整する関数
-  // const adjustToClosestEdge = (lat: number, lng: number, map: any) => {
-  //   const bounds = map.getBounds()
-  //   if (!bounds) {
-  //     return { lat, lng }
-  //   }
-
-  //   const ne = bounds.getNorthEast()
-  //   const sw = bounds.getSouthWest()
-
-  //   const mapLat = ne.lat() - sw.lat()
-  //   const mapLng = ne.lng() - sw.lng()
-
-  //   const paddingLat = mapLat * 0.01 // 上下 1% のパディング
-  //   const paddingLng = mapLng * 0.01 // 左右 1% のパディング
-
-  //   let adjustedLat = lat
-  //   let adjustedLng = lng
-
-  //   // 上辺に近い場合
-  //   if (lat > ne.lat() - paddingLat) {
-  //     adjustedLat = ne.lat() - paddingLat
-  //   }
-  //   // 下辺に近い場合
-  //   else if (lat < sw.lat() + paddingLat) {
-  //     adjustedLat = sw.lat() + paddingLat
-  //   }
-
-  //   // 右辺に近い場合
-  //   if (lng > ne.lng() - paddingLng) {
-  //     adjustedLng = ne.lng() - paddingLng
-  //   }
-  //   // 左辺に近い場合
-  //   else if (lng < sw.lng() + paddingLng) {
-  //     adjustedLng = sw.lng() + paddingLng
-  //   }
-
-  //   return { lat: adjustedLat, lng: adjustedLng }
-  // }
-
   return (
     <div className="relative w-full h-full">
       <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
@@ -905,12 +855,22 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
         />
         <div className="flex gap-2">
           <AutoArrangeButton onAutoArrange={handleAutoArrange} />
+          <CameraButton
+            onTakeSnapshot={handleTakeSnapshot}
+            disabled={activeInfoWindowCount === 0}
+            infoWindowCount={activeInfoWindowCount}
+          />
+          <HistoryPanel
+            snapshots={snapshots}
+            onRestoreSnapshot={handleRestoreSnapshot}
+            onDeleteSnapshot={deleteSnapshot}
+            onUpdateSnapshotTitle={updateSnapshotTitle}
+            onClearAllSnapshots={clearAllSnapshots}
+          />
         </div>
         <CloseAllButton onCloseAll={handleCloseAllInfoWindows} disabled={activeInfoWindowCount === 0} />
         <OrganizeButton onOrganize={handleAlignInfoWindows} disabled={activeInfoWindowCount === 0} />
       </div>
-
-      {/* 地図サイズ管理パネル */}
 
       <div ref={mapRef} className="w-full h-full" />
 

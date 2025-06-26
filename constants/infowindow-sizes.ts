@@ -2,8 +2,8 @@
 export const INFO_WINDOW_SIZES = {
   // デフォルトサイズ（メインサイズ）
   DEFAULT: {
-    width: 280,
-    height: 360,
+    width: 240,
+    height: 320,
   },
 
   // 最小化時のプリセットサイズ
@@ -23,8 +23,8 @@ export const INFO_WINDOW_SIZES = {
 
   // 境界計算用のサイズ（重なり判定など）
   BOUNDS_CALCULATION: {
-    width: 280, // DEFAULTと同じ
-    height: 360, // DEFAULTと同じ
+    width: 240, // DEFAULTと同じ
+    height: 320, // DEFAULTと同じ
   },
 
   // サイズ制限

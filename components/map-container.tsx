@@ -947,10 +947,10 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
           onClearAll={handleClearAllCategories}
         />
         <div className="flex gap-2">
+          <OrganizeButton onOrganize={handleAlignInfoWindows} disabled={activeInfoWindowCount === 0} />
           <AutoArrangeButton onAutoArrange={handleAutoArrange} />
         </div>
         <CloseAllButton onCloseAll={handleCloseAllInfoWindows} disabled={activeInfoWindowCount === 0} />
-        <OrganizeButton onOrganize={handleAlignInfoWindows} disabled={activeInfoWindowCount === 0} />
       </div>
 
       <div ref={mapRef} className="w-full h-full" />

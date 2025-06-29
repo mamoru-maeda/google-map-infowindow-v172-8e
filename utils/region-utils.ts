@@ -722,9 +722,48 @@ export function getEdgeAlignedPositions(
   }
 
   /* ========= 追加: 残存重なりを強制シフトして解消 ========= */
+  // ２次元配列から重なり数と詳細を算出するユーティリティ
+  function computeOverlaps() {
+    let overlaps = 0
+    overlapDetails.length = 0
+    for (let i = 0; i < placedPositions.length; i++) {
+      for (let j = i + 1; j < placedPositions.length; j++) {
+        const b1 = calculateInfoWindowBounds(
+          placedPositions[i].position.lat,
+          placedPositions[i].position.lng,
+          map,
+          placedPositions[i].id,
+        )
+        const b2 = calculateInfoWindowBounds(
+          placedPositions[j].position.lat,
+          placedPositions[j].position.lng,
+          map,
+          placedPositions[j].id,
+        )
+        const h = Math.max(0, Math.min(b1.east, b2.east) - Math.max(b1.west, b2.west))
+        const v = Math.max(0, Math.min(b1.north, b2.north) - Math.max(b1.south, b2.south))
+        if (h > 0 && v > 0) {
+          overlaps++
+          const area = h * v
+          const p1 = (area / ((b1.east - b1.west) * (b1.north - b1.south))) * 100
+          const p2 = (area / ((b2.east - b2.west) * (b2.north - b2.south))) * 100
+          overlapDetails.push({
+            id1: b1.id,
+            id2: b2.id,
+            horizontalOverlap: h,
+            verticalOverlap: v,
+            overlapArea: area,
+            overlapPercentage1: p1,
+            overlapPercentage2: p2,
+          })
+        }
+      }
+    }
+    return overlaps
+  }
+
   const MAX_SHIFT_LOOPS = 5
   let shiftLoop = 0
-  let totalOverlaps = 0
   const overlapDetails: Array<{
     id1: string
     id2: string
@@ -734,6 +773,7 @@ export function getEdgeAlignedPositions(
     overlapPercentage1: number
     overlapPercentage2: number
   }> = []
+  let totalOverlaps = computeOverlaps() // ★初期重なり数を計算
 
   while (totalOverlaps > 0 && shiftLoop < MAX_SHIFT_LOOPS) {
     console.warn(`🔄 最終シフト round ${shiftLoop + 1}: 残り ${totalOverlaps} 件`)
@@ -753,55 +793,75 @@ export function getEdgeAlignedPositions(
     }
 
     /* --- 重なりを再計算 --- */
-    totalOverlaps = 0
-    overlapDetails.length = 0
-    for (let i = 0; i < placedPositions.length; i++) {
-      for (let j = i + 1; j < placedPositions.length; j++) {
-        const b1 = calculateInfoWindowBounds(
-          placedPositions[i].position.lat,
-          placedPositions[i].position.lng,
-          map,
-          placedPositions[i].id,
-        )
-        const b2 = calculateInfoWindowBounds(
-          placedPositions[j].position.lat,
-          placedPositions[j].position.lng,
-          map,
-          placedPositions[j].id,
-        )
-        const h = Math.max(0, Math.min(b1.east, b2.east) - Math.max(b1.west, b2.west))
-        const v = Math.max(0, Math.min(b1.north, b2.north) - Math.max(b1.south, b2.south))
-        if (h > 0 && v > 0) {
-          totalOverlaps++
-
-          const overlapArea = h * v
-          const bounds1Area = (b1.east - b1.west) * (b1.north - b1.south)
-          const bounds2Area = (b2.east - b2.west) * (b2.north - b2.south)
-          const overlapPercentage1 = (overlapArea / bounds1Area) * 100
-          const overlapPercentage2 = (overlapArea / bounds2Area) * 100
-
-          overlapDetails.push({
-            id1: b1.id,
-            id2: b2.id,
-            horizontalOverlap: h,
-            verticalOverlap: v,
-            overlapArea,
-            overlapPercentage1,
-            overlapPercentage2,
-          })
-
-          console.error(`❌ 吹き出し重なり詳細: ${placedPositions[i].id} ↔ ${placedPositions[j].id}`)
-          console.error(`   水平重なり: ${fmt(h)} 度`)
-          console.error(`   垂直重なり: ${fmt(v)} 度`)
-          console.error(`   重なり面積: ${fmt(overlapArea)} 平方度`)
-          console.error(`   ${placedPositions[i].id}の重なり率: ${fmt(overlapPercentage1, 2)}%`)
-          console.error(`   ${placedPositions[j].id}の重なり率: ${fmt(overlapPercentage2, 2)}%`)
-        }
-      }
-    }
+    totalOverlaps = computeOverlaps() // ★再計算
     shiftLoop++
   }
   /* ========= 追加ここまで ========= */
+  /* ---------- 残存重なりをグローバルに再解消 ---------- */
+  if (totalOverlaps > 0) {
+    console.warn(`♻︎ 残存重なり ${totalOverlaps} 件を再解消ループで処理します`)
+    const MAX_GLOBAL_FIX_ATTEMPTS = 3
+    let fixAttempt = 0
+
+    /**
+     * overlapDetails は直前の computeOverlaps 呼び出しで更新済み
+     * ここでは id2 側（＝後に配置された吹き出し）を優先的に動かす
+     */
+    while (totalOverlaps > 0 && fixAttempt < MAX_GLOBAL_FIX_ATTEMPTS) {
+      overlapDetails.forEach(({ id2 }) => {
+        const targetPosObj = placedPositions.find((p) => p.id === id2)
+        if (!targetPosObj) return
+
+        // 現在の境界
+        const targetBounds = calculateInfoWindowBounds(targetPosObj.position.lat, targetPosObj.position.lng, map, id2)
+
+        // 他吹き出しの境界
+        const otherBounds = placedPositions
+          .filter((p) => p.id !== id2)
+          .map((p) => calculateInfoWindowBounds(p.position.lat, p.position.lng, map, p.id))
+
+        // 空き位置を探索
+        const adjusted = adjustPositionToAvoidOverlap(targetBounds, otherBounds, map, 30)
+        targetPosObj.position = adjusted
+        result[id2] = adjusted
+      })
+
+      // 再計算
+      totalOverlaps = computeOverlaps()
+      fixAttempt++
+      if (totalOverlaps > 0) {
+        console.warn(`⏩ 再解消ループ ${fixAttempt} 回目終了：残り ${totalOverlaps} 件`)
+      }
+    }
+
+    if (totalOverlaps === 0) {
+      console.log("✅ グローバル再解消ループで全重なりを解消しました")
+    } else {
+      console.warn("⚠️ 再解消ループでも重なりが残りました")
+    }
+  }
+  /* ---------- 再解消ここまで ---------- */
+
+  /* ---------- 最終境界クランプ ---------- */
+  Object.entries(result).forEach(([id, pos]) => {
+    let { lat, lng } = pos
+    // 10px マージン分の度数
+    const marginLng = edgeDistanceLng
+    const marginLat = edgeDistanceLat
+
+    // 緯度方向
+    const minLat = sw.lat() + marginLat + infoWindowHeightLat / 2
+    const maxLat = ne.lat() - marginLat - infoWindowHeightLat / 2
+    lat = Math.min(Math.max(lat, minLat), maxLat)
+
+    // 経度方向
+    const minLng = sw.lng() + marginLng + infoWindowWidthLng / 2
+    const maxLng = ne.lng() - marginLng - infoWindowWidthLng / 2
+    lng = Math.min(Math.max(lng, minLng), maxLng)
+
+    result[id] = { lat, lng }
+  })
+  /* ---------- クランプここまで ---------- */
 
   // 重なり統計の出力
   if (totalOverlaps > 0) {

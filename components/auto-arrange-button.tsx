@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-import { ArrowDownWideNarrow } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
@@ -14,12 +13,17 @@ const AutoArrangeButton: React.FC<AutoArrangeButtonProps> = ({ onAutoArrange }) 
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button variant="outline" size="sm" className="h-8" onClick={onAutoArrange}>
-            <ArrowDownWideNarrow className="h-4 w-4" />
+          <Button
+            onClick={onAutoArrange}
+            size="sm"
+            variant="outline"
+            className="bg-white hover:bg-gray-50 border-gray-300 shadow-sm"
+          >
+            中心整列
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          <p>吹き出しを自動整列</p>
+          <p>吹き出しを中心に整列</p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

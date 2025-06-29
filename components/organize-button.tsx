@@ -22,7 +22,7 @@ const OrganizeButton: React.FC<OrganizeButtonProps> = ({ onOrganize, disabled = 
             variant="outline"
             className="bg-white hover:bg-gray-50 border-gray-300 shadow-sm"
           >
-            整列
+            周辺整列
           </Button>
         </TooltipTrigger>
         <TooltipContent>

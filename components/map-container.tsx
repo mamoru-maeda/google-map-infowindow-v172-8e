@@ -9,15 +9,19 @@ import CategoryFilter from "./category-filter"
 import AutoArrangeButton from "./auto-arrange-button"
 import CloseAllButton from "./close-all-button"
 import OrganizeButton from "./organize-button"
-import CameraButton from "./camera-button"
-import HistoryPanel from "./history-panel"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { localStorageUtils } from "@/lib/utils"
 import type { MarkerData, InfoWindowState, Category } from "@/types/map-types"
-import type { MapSnapshot } from "@/types/snapshot-types"
 import { useGoogleMaps } from "@/hooks/use-google-maps"
-import { useSnapshots } from "@/hooks/use-snapshots"
-import { getEdgeAlignedPositions, getClosestMapEdge } from "@/utils/region-utils"
-import { getCurrentDefaultSize } from "@/hooks/use-infowindow-settings"
+import {
+  getEdgeAlignedPositions,
+  getClosestMapEdge,
+  adjustToClosestEdge,
+  calculateInfoWindowBounds,
+  checkOverlap,
+  adjustPositionToAvoidOverlap,
+} from "@/utils/region-utils"
 
 interface MapContainerProps {
   center: {
@@ -31,6 +35,7 @@ interface MapContainerProps {
 
 const STORAGE_KEY = "google-map-infowindows-v14"
 const CATEGORY_FILTER_KEY = "google-map-categories-v14"
+const MAX_INFOWINDOWS = 12 // 最大12個まで同時表示可能
 
 // グローバルに google 変数を宣言
 declare global {
@@ -55,8 +60,8 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   const [currentDraggingId, setCurrentDraggingId] = useState<string | null>(null)
   const [initAttempts, setInitAttempts] = useState(0)
 
-  // スナップショット管理フックを使用
-  const { snapshots, saveSnapshot, deleteSnapshot, updateSnapshotTitle, clearAllSnapshots } = useSnapshots()
+  console.log(`🎯 最大吹き出し数: ${MAX_INFOWINDOWS}個`)
+  console.log(`📊 現在の吹き出し数: ${Object.keys(activeInfoWindows).length}個`)
 
   // APIキーを取得する関数（サーバーサイドAPIエンドポイントのみ使用）
   const fetchApiKey = useCallback(async (retryCount = 0): Promise<string | null> => {
@@ -160,7 +165,15 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
 
   // ローカルストレージから吹き出し状態を読み込む
   const loadInfoWindowStates = useCallback(() => {
-    return localStorageUtils.loadData(STORAGE_KEY, {})
+    const savedStates = localStorageUtils.loadData(STORAGE_KEY, {})
+    // 12個を超える場合は最新の12個のみ保持
+    const stateEntries = Object.entries(savedStates)
+    if (stateEntries.length > MAX_INFOWINDOWS) {
+      console.log(`⚠️ 保存された吹き出しが${stateEntries.length}個あります。最新の${MAX_INFOWINDOWS}個のみ読み込みます`)
+      const limitedStates = Object.fromEntries(stateEntries.slice(-MAX_INFOWINDOWS))
+      return limitedStates
+    }
+    return savedStates
   }, [])
 
   // ローカルストレージに吹き出し状態を保存
@@ -178,102 +191,26 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
     localStorageUtils.saveData(CATEGORY_FILTER_KEY, categories)
   }, [])
 
-  // 吹き出しを地図の10ピクセル内側に調整する関数
-  const adjustToMapEdge = useCallback((lat: number, lng: number, map: any) => {
-    const bounds = map.getBounds()
-    const mapDiv = map.getDiv()
-
-    if (!bounds || !mapDiv) {
-      console.error("❌ 地図の境界またはDOMエレメントを取得できません")
-      return { lat, lng }
+  // 整頓された吹き出しの位置を再計算する関数
+  const recalculateOrganizedPositions = useCallback(() => {
+    if (!map) {
+      console.log("🔄 地図インスタンスが利用できません")
+      return
     }
 
-    const ne = bounds.getNorthEast()
-    const sw = bounds.getSouthWest()
-    const mapWidth = ne.lng() - sw.lng()
-    const mapHeight = ne.lat() - sw.lat()
+    // 整頓された吹き出しを抽出
+    const organizedInfoWindows = Object.entries(activeInfoWindows).filter(([_, infoWindow]) => infoWindow.isOrganized)
 
-    // 地図のピクセルサイズを取得
-    const mapPixelWidth = mapDiv.offsetWidth
-    const mapPixelHeight = mapDiv.offsetHeight
-
-    // ピクセルサイズを緯度経度に変換するための係数
-    const lngPerPixel = mapWidth / mapPixelWidth
-    const latPerPixel = mapHeight / mapPixelHeight
-
-    // 吹き出しサイズを取得
-    const currentSize = getCurrentDefaultSize()
-    const infoWindowWidth = currentSize.width
-    const infoWindowHeight = currentSize.height
-
-    // 固定の10ピクセルマージン
-    const marginPixels = 10
-    const marginLng = marginPixels * lngPerPixel
-    const marginLat = marginPixels * latPerPixel
-
-    // 吹き出しサイズを緯度経度に変換
-    const infoWindowWidthLng = infoWindowWidth * lngPerPixel
-    const infoWindowHeightLat = infoWindowHeight * latPerPixel
-
-    console.log(`🎯 手動移動後の自動調整: (${lat.toFixed(6)}, ${lng.toFixed(6)})`)
-
-    // 地図の各辺との距離を計算
-    const distanceToTop = ne.lat() - lat
-    const distanceToBottom = lat - sw.lat()
-    const distanceToRight = ne.lng() - lng
-    const distanceToLeft = lng - sw.lng()
-
-    // 最も近い辺を判定
-    const minDistance = Math.min(distanceToTop, distanceToBottom, distanceToRight, distanceToLeft)
-
-    let adjustedPosition: { lat: number; lng: number }
-
-    if (minDistance === distanceToTop) {
-      // 上辺に最も近い：吹き出しの上辺が地図上辺から10px内側になるように配置
-      adjustedPosition = {
-        lat: ne.lat() - marginLat - infoWindowHeightLat / 2,
-        lng: lng, // 経度はそのまま維持
-      }
-      console.log(`🔝 上辺に調整: (${adjustedPosition.lat.toFixed(6)}, ${adjustedPosition.lng.toFixed(6)})`)
-    } else if (minDistance === distanceToBottom) {
-      // 下辺に最も近い：吹き出しの下辺が地図下辺から10px内側になるように配置
-      adjustedPosition = {
-        lat: sw.lat() + marginLat + infoWindowHeightLat / 2,
-        lng: lng, // 経度はそのまま維持
-      }
-      console.log(`🔽 下辺に調整: (${adjustedPosition.lat.toFixed(6)}, ${adjustedPosition.lng.toFixed(6)})`)
-    } else if (minDistance === distanceToLeft) {
-      // 左辺に最も近い：吹き出しの左辺が地図左辺から10px内側になるように配置
-      adjustedPosition = {
-        lat: lat, // 緯度はそのまま維持
-        lng: sw.lng() + marginLng + infoWindowWidthLng / 2,
-      }
-      console.log(`◀️ 左辺に調整: (${adjustedPosition.lat.toFixed(6)}, ${adjustedPosition.lng.toFixed(6)})`)
-    } else {
-      // 右辺に最も近い：吹き出しの右辺が地図右辺から10px内側になるように配置
-      adjustedPosition = {
-        lat: lat, // 緯度はそのまま維持
-        lng: ne.lng() - marginLng - infoWindowWidthLng / 2,
-      }
-      console.log(`▶️ 右辺に調整: (${adjustedPosition.lat.toFixed(6)}, ${adjustedPosition.lng.toFixed(6)})`)
+    if (organizedInfoWindows.length === 0) {
+      console.log("📍 整頓された吹き出しがありません")
+      return
     }
 
-    // 調整後の位置が地図境界内に収まっているかチェック
-    const finalLat = Math.max(
-      sw.lat() + marginLat + infoWindowHeightLat / 2,
-      Math.min(ne.lat() - marginLat - infoWindowHeightLat / 2, adjustedPosition.lat),
-    )
-    const finalLng = Math.max(
-      sw.lng() + marginLng + infoWindowWidthLng / 2,
-      Math.min(ne.lng() - marginLng - infoWindowWidthLng / 2, adjustedPosition.lng),
-    )
+    console.log(`🔄 ${organizedInfoWindows.length}個の整頓された吹き出しの位置を維持します（再計算なし）`)
 
-    const finalPosition = { lat: finalLat, lng: finalLng }
-
-    console.log(`✅ 最終調整位置: (${finalPosition.lat.toFixed(6)}, ${finalPosition.lng.toFixed(6)})`)
-
-    return finalPosition
-  }, [])
+    // 整頓された吹き出しの位置は変更しない
+    // ユーザーが手動で整列ボタンを押した時のみ位置を変更する
+  }, [map, activeInfoWindows])
 
   // マップの初期化
   const initMap = useCallback(() => {
@@ -349,7 +286,15 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
       setLoadError(`マップの初期化に失敗しました: ${errorMessage}`)
       return false
     }
-  }, [center, zoom, loadInfoWindowStates, categories, loadCategoryFilterState, saveCategoryFilterState])
+  }, [
+    center,
+    zoom,
+    loadInfoWindowStates,
+    categories,
+    loadCategoryFilterState,
+    saveCategoryFilterState,
+    recalculateOrganizedPositions,
+  ])
 
   // マップの初期化を試みる
   useEffect(() => {
@@ -368,23 +313,57 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
     }
   }, [isGoogleMapsLoaded, apiKey, initMap, isMapLoaded, map, initAttempts])
 
-  // マーカークリック時のハンドラー
+  // マーカークリック時のハンドラー（12個制限付き）
   const handleMarkerClick = useCallback(
     (marker: MarkerData) => {
       setActiveInfoWindows((prev) => {
-        // 既存の状態があれば使用、なければ新規作成
+        const currentCount = Object.keys(prev).length
+
+        // 既に開いている場合は何もしない
+        if (prev[marker.id]) {
+          console.log(`ℹ️ 既に開いています: ${marker.title}`)
+          return prev
+        }
+
+        // 12個の制限チェック
+        if (currentCount >= MAX_INFOWINDOWS) {
+          console.log(`⚠️ 最大吹き出し数(${MAX_INFOWINDOWS})に達しています`)
+
+          // 最も古い吹き出しを閉じる（最初のエントリを削除）
+          const entries = Object.entries(prev)
+          const [oldestId] = entries[0]
+          const { [oldestId]: removed, ...rest } = prev
+
+          console.log(`🔄 最古の吹き出し "${oldestId}" を閉じて新しい吹き出し "${marker.title}" を追加`)
+
+          const updatedState = {
+            ...rest,
+            [marker.id]: {
+              markerId: marker.id,
+              position: { ...marker.position },
+              isMinimized: false,
+              userPositioned: false,
+              isOrganized: false,
+            },
+          }
+
+          saveInfoWindowStates(updatedState)
+          return updatedState
+        }
+
+        // 新しい吹き出しを追加
         const updatedState = {
           ...prev,
           [marker.id]: {
             markerId: marker.id,
-            position: { ...marker.position }, // マーカーと同じ位置に初期配置
-            isMinimized: prev[marker.id]?.isMinimized || false,
-            userPositioned: prev[marker.id]?.userPositioned || false,
-            isOrganized: false, // 新しく開いた吹き出しは整頓状態ではない
+            position: { ...marker.position },
+            isMinimized: false,
+            userPositioned: false,
+            isOrganized: false,
           },
         }
 
-        // 状態を保存
+        console.log(`✅ 新しい吹き出しを追加: ${marker.title} (${currentCount + 1}/${MAX_INFOWINDOWS})`)
         saveInfoWindowStates(updatedState)
         return updatedState
       })
@@ -392,11 +371,41 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
     [saveInfoWindowStates],
   )
 
+  // 12個の吹き出しを一度に開くテスト関数
+  const handleOpen12InfoWindows = useCallback(() => {
+    console.log("🎯 12個の吹き出しを一度に開くテスト開始")
+
+    // 表示されているマーカーを取得
+    const visibleMarkers = markers.filter((marker) => selectedCategories.includes(marker.category))
+    const testMarkers = visibleMarkers.slice(0, MAX_INFOWINDOWS)
+
+    if (testMarkers.length < MAX_INFOWINDOWS) {
+      console.log(`⚠️ テスト用マーカーが不足: ${testMarkers.length}個のみ利用可能`)
+    }
+
+    // 12個の吹き出しを一度に開く
+    const newInfoWindows: Record<string, InfoWindowState> = {}
+    testMarkers.forEach((marker) => {
+      newInfoWindows[marker.id] = {
+        markerId: marker.id,
+        position: { ...marker.position },
+        isMinimized: false,
+        userPositioned: false,
+        isOrganized: false,
+      }
+    })
+
+    setActiveInfoWindows(newInfoWindows)
+    saveInfoWindowStates(newInfoWindows)
+    console.log(`✅ ${Object.keys(newInfoWindows).length}個の吹き出しを同時表示`)
+  }, [markers, selectedCategories, saveInfoWindowStates])
+
   // 吹き出しを閉じるハンドラー
   const handleCloseInfoWindow = useCallback(
     (markerId: string) => {
       setActiveInfoWindows((prev) => {
         const { [markerId]: removed, ...rest } = prev
+        console.log(`❌ 吹き出しを閉じました: ${markerId} (残り: ${Object.keys(rest).length}個)`)
         saveInfoWindowStates(rest)
         return rest
       })
@@ -406,14 +415,17 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
 
   // 全ての吹き出しを閉じるハンドラー
   const handleCloseAllInfoWindows = useCallback(() => {
+    const currentCount = Object.keys(activeInfoWindows).length
+    console.log(`🗑️ 全ての吹き出しを閉じます (${currentCount}個)`)
     setActiveInfoWindows({})
     saveInfoWindowStates({})
-  }, [saveInfoWindowStates])
+  }, [activeInfoWindows, saveInfoWindowStates])
 
   // 吹き出しのドラッグ開始ハンドラー
   const handleInfoWindowDragStart = useCallback((markerId: string) => {
     setIsDraggingAny(true)
     setCurrentDraggingId(markerId)
+    console.log(`🖱️ ドラッグ開始: ${markerId}`)
 
     // テキスト選択を防止
     document.body.classList.add("select-none")
@@ -438,23 +450,60 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
       )
 
       // 最も近い辺に10ピクセル内側に自動調整
-      const adjustedPosition = adjustToMapEdge(draggedLat, draggedLng, map)
+      const adjustedPosition = adjustToClosestEdge(draggedLat, draggedLng, map)
+      console.log(
+        `🎯 自動調整後: ${markerId} を (${adjustedPosition.lat.toFixed(6)}, ${adjustedPosition.lng.toFixed(6)}) に調整`,
+      )
+
+      // 他の吹き出しとの重なりをチェック
+      const otherInfoWindows = Object.entries(activeInfoWindows).filter(([id]) => id !== markerId)
+      const existingBounds = otherInfoWindows.map(([id, infoWindow]) =>
+        calculateInfoWindowBounds(infoWindow.position.lat, infoWindow.position.lng, map, id),
+      )
+
+      // 調整後の位置での境界ボックスを計算
+      const adjustedBounds = calculateInfoWindowBounds(adjustedPosition.lat, adjustedPosition.lng, map, markerId)
+
+      // 重なりチェック
+      let hasOverlap = false
+      let overlapWith = ""
+      for (const existingBound of existingBounds) {
+        if (checkOverlap(adjustedBounds, existingBound)) {
+          hasOverlap = true
+          overlapWith = existingBound.id
+          break
+        }
+      }
+
+      let finalPosition = adjustedPosition
+
+      if (hasOverlap) {
+        console.log(`⚠️ 自動調整後に重なり検出: ${markerId} が ${overlapWith} と重なります`)
+        // 重なりを回避する位置を計算
+        const overlapAvoidedPosition = adjustPositionToAvoidOverlap(adjustedBounds, existingBounds, map, 30)
+        finalPosition = overlapAvoidedPosition
+        console.log(
+          `🔧 重なり回避: ${markerId} を位置 (${overlapAvoidedPosition.lat.toFixed(6)}, ${overlapAvoidedPosition.lng.toFixed(6)}) に再調整`,
+        )
+      } else {
+        console.log(`✅ 自動調整OK: ${markerId} は重なりなし`)
+      }
 
       setActiveInfoWindows((prev) => {
         const updatedState = {
           ...prev,
           [markerId]: {
             ...prev[markerId],
-            position: adjustedPosition,
-            userPositioned: true,
-            isOrganized: false,
+            position: finalPosition,
+            userPositioned: true, // ユーザーが配置した位置であることを記録
+            isOrganized: false, // 手動移動により整頓状態を解除
           },
         }
         saveInfoWindowStates(updatedState)
         return updatedState
       })
     },
-    [saveInfoWindowStates, map, adjustToMapEdge],
+    [saveInfoWindowStates, map, activeInfoWindows],
   )
 
   // 吹き出しの最小化切り替えハンドラー
@@ -521,6 +570,8 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
 
     if (activeMarkers.length === 0) return
 
+    console.log(`🎯 ${activeMarkers.length}個の吹き出しを自動整列します`)
+
     // マップの中心を基準に吹き出しを円形に配置
     const center = map.getCenter()
     const radius = Math.min(mapWidth, mapHeight) * 0.3 // マップサイズの30%を半径とする
@@ -543,6 +594,7 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
 
     setActiveInfoWindows(newInfoWindows)
     saveInfoWindowStates(newInfoWindows)
+    console.log(`✅ ${activeMarkers.length}個の吹き出しの自動整列が完了`)
   }, [map, markers, selectedCategories, activeInfoWindows, saveInfoWindowStates])
 
   // 吹き出しの地域別整列（地図内側）
@@ -552,7 +604,8 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
       return
     }
 
-    console.log("🗺️ 辺配置整列を開始します")
+    const activeCount = Object.keys(activeInfoWindows).length
+    console.log(`🗺️ 辺配置整列を開始します (${activeCount}個の吹き出し)`)
 
     try {
       // 地図の状態を確認
@@ -593,10 +646,16 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
 
       console.log("🔄 整頓状態をリセットしました")
 
-      // 辺配置位置を計算
-      console.log("🔧 辺配置位置を計算中（現在の吹き出し位置基準）...")
+      // 辺配置位置を計算（重なり回避強化版）
+      console.log("🔧 辺配置位置を計算中（重なり回避強化版）...")
       const edgePositions = getEdgeAlignedPositions(activeInfoWindows, map)
       console.log(`✅ ${Object.keys(edgePositions).length}個の位置を計算しました`)
+
+      // 計算結果をチェック
+      if (Object.keys(edgePositions).length === 0) {
+        console.error("❌ 配置位置の計算に失敗しました")
+        return
+      }
 
       // 新しい吹き出し状態を作成
       const newInfoWindows: Record<string, InfoWindowState> = { ...resetInfoWindows }
@@ -621,7 +680,7 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
             }
             successCount++
             console.log(
-              `✅ "${marker.id}" の配置完了（現在位置 ${currentInfoWindow.position.lat.toFixed(6)}, ${currentInfoWindow.position.lng.toFixed(6)} から ${closestEdge}辺に移動）`,
+              `✅ "${marker.id}" の配置完了（${closestEdge}辺に移動: ${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}）`,
             )
           } else {
             console.warn(`⚠️ "${marker.id}" の位置が計算されませんでした`)
@@ -634,90 +693,91 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
       console.log(`💾 新しい吹き出し位置を保存中 (成功: ${successCount}個)`)
       setActiveInfoWindows(newInfoWindows)
       saveInfoWindowStates(newInfoWindows)
-      console.log("✅ 辺配置整列が完了しました")
+
+      if (successCount === activeMarkers.length) {
+        console.log("🎉 辺配置整列が完全に成功しました")
+      } else {
+        console.warn(`⚠️ 一部の吹き出しの配置に失敗しました (成功: ${successCount}/${activeMarkers.length})`)
+      }
+
+      // 重なり確認の詳細ログを出力
+      console.log(`🔍 重なり確認を開始します...`)
+
+      const finalBounds: any[] = []
+      Object.entries(newInfoWindows).forEach(([id, infoWindow]) => {
+        const bounds = calculateInfoWindowBounds(infoWindow.position.lat, infoWindow.position.lng, map, id)
+        finalBounds.push(bounds)
+      })
+
+      // 全ペアの重なりチェック
+      let totalOverlapCount = 0
+      const overlapPairs: Array<{ id1: string; id2: string; overlapArea: number }> = []
+
+      for (let i = 0; i < finalBounds.length; i++) {
+        for (let j = i + 1; j < finalBounds.length; j++) {
+          const bounds1 = finalBounds[i]
+          const bounds2 = finalBounds[j]
+
+          const horizontalOverlap = Math.max(
+            0,
+            Math.min(bounds1.east, bounds2.east) - Math.max(bounds1.west, bounds2.west),
+          )
+          const verticalOverlap = Math.max(
+            0,
+            Math.min(bounds1.north, bounds2.north) - Math.max(bounds1.south, bounds2.south),
+          )
+
+          if (horizontalOverlap > 0 && verticalOverlap > 0) {
+            totalOverlapCount++
+            const overlapArea = horizontalOverlap * verticalOverlap
+            overlapPairs.push({ id1: bounds1.id, id2: bounds2.id, overlapArea })
+
+            console.error(`❌ 重なり検出: ${bounds1.id} ↔ ${bounds2.id}`)
+            console.error(`   重なり面積: ${overlapArea.toFixed(10)} 平方度`)
+            console.error(`   水平重なり: ${horizontalOverlap.toFixed(10)} 度`)
+            console.error(`   垂直重なり: ${verticalOverlap.toFixed(10)} 度`)
+          }
+        }
+      }
+
+      // 重なり確認結果の出力
+      if (totalOverlapCount === 0) {
+        console.log(`✅ 重なり確認完了: 吹き出し同士の重なりは完全に回避されています！`)
+        console.log(`📊 確認済みペア数: ${(finalBounds.length * (finalBounds.length - 1)) / 2}ペア`)
+        console.log(`🎉 重なり回避率: 100%`)
+      } else {
+        console.error(`❌ 重なり確認失敗: ${totalOverlapCount}個の重なりが検出されました`)
+        console.error(`📊 確認済みペア数: ${(finalBounds.length * (finalBounds.length - 1)) / 2}ペア`)
+        console.error(
+          `📊 重なり回避率: ${((((finalBounds.length * (finalBounds.length - 1)) / 2 - totalOverlapCount) / ((finalBounds.length * (finalBounds.length - 1)) / 2)) * 100).toFixed(2)}%`,
+        )
+
+        // 最も重なりの大きいペアを特定
+        if (overlapPairs.length > 0) {
+          const maxOverlapPair = overlapPairs.reduce((max, pair) => (pair.overlapArea > max.overlapArea ? pair : max))
+          console.error(
+            `📊 最大重なり: ${maxOverlapPair.id1} ↔ ${maxOverlapPair.id2} (面積: ${maxOverlapPair.overlapArea.toFixed(10)})`,
+          )
+        }
+      }
+
+      // 各吹き出しの境界情報を出力
+      console.log(`📏 各吹き出しの境界情報:`)
+      finalBounds.forEach((bounds) => {
+        const width = bounds.east - bounds.west
+        const height = bounds.north - bounds.south
+        console.log(
+          `  ${bounds.id}: 中心(${bounds.centerLat.toFixed(8)}, ${bounds.centerLng.toFixed(8)}) サイズ(${width.toFixed(8)} × ${height.toFixed(8)})`,
+        )
+        console.log(
+          `    境界: N=${bounds.north.toFixed(8)}, S=${bounds.south.toFixed(8)}, E=${bounds.east.toFixed(8)}, W=${bounds.west.toFixed(8)}`,
+        )
+      })
     } catch (error) {
       console.error("❌ 辺配置整列中にエラーが発生しました:", error)
       // エラーが発生してもアプリケーションが停止しないようにする
     }
   }, [map, markers, selectedCategories, activeInfoWindows, saveInfoWindowStates])
-
-  // スナップショット保存ハンドラー
-  const handleTakeSnapshot = useCallback(
-    (title: string) => {
-      console.log("📸 handleTakeSnapshot が呼び出されました", { title, activeInfoWindowCount })
-
-      if (!map) {
-        console.error("❌ 地図インスタンスが利用できません")
-        return
-      }
-
-      console.log(`📸 スナップショット保存開始: "${title}"`)
-
-      try {
-        const center = map.getCenter()
-        const zoom = map.getZoom()
-
-        console.log("📸 地図情報取得:", {
-          center: { lat: center.lat(), lng: center.lng() },
-          zoom,
-          activeInfoWindows: Object.keys(activeInfoWindows).length,
-          selectedCategories: selectedCategories.length,
-        })
-
-        const snapshot = saveSnapshot(
-          title,
-          activeInfoWindows,
-          { lat: center.lat(), lng: center.lng() },
-          zoom,
-          selectedCategories,
-        )
-
-        console.log(`✅ スナップショット保存完了: "${snapshot.title}"`, snapshot)
-      } catch (error) {
-        console.error("❌ スナップショット保存エラー:", error)
-      }
-    },
-    [map, activeInfoWindows, selectedCategories, saveSnapshot],
-  )
-
-  // スナップショット復元ハンドラー
-  const handleRestoreSnapshot = useCallback(
-    (snapshot: MapSnapshot) => {
-      console.log("🔄 handleRestoreSnapshot が呼び出されました", snapshot)
-
-      if (!map) {
-        console.error("❌ 地図インスタンスが利用できません")
-        return
-      }
-
-      console.log(`🔄 スナップショット復元開始: "${snapshot.title}"`, snapshot)
-
-      try {
-        // 地図の位置とズームを復元
-        const center = new window.google.maps.LatLng(snapshot.mapCenter.lat, snapshot.mapCenter.lng)
-        map.setCenter(center)
-        map.setZoom(snapshot.mapZoom)
-        console.log(
-          `🗺️ 地図位置復元: (${snapshot.mapCenter.lat}, ${snapshot.mapCenter.lng}), ズーム: ${snapshot.mapZoom}`,
-        )
-
-        // カテゴリーフィルターを復元
-        setSelectedCategories(snapshot.selectedCategories)
-        saveCategoryFilterState(snapshot.selectedCategories)
-        console.log(`🏷️ カテゴリーフィルター復元: ${snapshot.selectedCategories.length}個`, snapshot.selectedCategories)
-
-        // 吹き出し状態を復元
-        setActiveInfoWindows(snapshot.infoWindows)
-        saveInfoWindowStates(snapshot.infoWindows)
-        console.log(`💬 吹き出し状態復元: ${Object.keys(snapshot.infoWindows).length}個`, snapshot.infoWindows)
-
-        console.log(`✅ スナップショット復元完了: "${snapshot.title}"`)
-      } catch (error) {
-        console.error(`❌ スナップショット復元エラー:`, error)
-      }
-    },
-    [map, saveCategoryFilterState, saveInfoWindowStates],
-  )
 
   // フィルタリングされたマーカー
   const filteredMarkers = markers.filter((marker) => selectedCategories.includes(marker.category))
@@ -728,7 +788,7 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   // 吹き出しが表示されているマーカーのIDリスト
   const activeMarkerIds = Object.keys(activeInfoWindows)
 
-  // 表示されている吹き出しの数（派生値）
+  // 表示されている吹き出しの数
   const activeInfoWindowCount = activeMarkerIds.length
 
   // APIキーがロード中の場合はローディングメッセージを表示
@@ -846,6 +906,39 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   return (
     <div className="relative w-full h-full">
       <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
+        {/* 吹き出し管理パネル */}
+        <div className="bg-white p-3 rounded-lg shadow-md border">
+          <div className="text-sm font-medium mb-2">吹き出し管理</div>
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-600">表示中:</span>
+              <Badge variant={activeInfoWindowCount >= MAX_INFOWINDOWS ? "destructive" : "default"}>
+                {activeInfoWindowCount}/{MAX_INFOWINDOWS}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-600">最小化:</span>
+              <Badge variant="secondary">
+                {Object.values(activeInfoWindows).filter((info) => info.isMinimized).length}
+              </Badge>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-600">整列済み:</span>
+              <Badge variant="outline">
+                {Object.values(activeInfoWindows).filter((info) => info.isOrganized).length}
+              </Badge>
+            </div>
+            <Button
+              onClick={handleOpen12InfoWindows}
+              size="sm"
+              className="w-full text-xs"
+              disabled={filteredMarkers.length < MAX_INFOWINDOWS}
+            >
+              12個同時表示テスト
+            </Button>
+          </div>
+        </div>
+
         <CategoryFilter
           categories={categories}
           selectedCategories={selectedCategories}
@@ -855,18 +948,6 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
         />
         <div className="flex gap-2">
           <AutoArrangeButton onAutoArrange={handleAutoArrange} />
-          <CameraButton
-            onTakeSnapshot={handleTakeSnapshot}
-            disabled={activeInfoWindowCount === 0}
-            infoWindowCount={activeInfoWindowCount}
-          />
-          <HistoryPanel
-            snapshots={snapshots}
-            onRestoreSnapshot={handleRestoreSnapshot}
-            onDeleteSnapshot={deleteSnapshot}
-            onUpdateSnapshotTitle={updateSnapshotTitle}
-            onClearAllSnapshots={clearAllSnapshots}
-          />
         </div>
         <CloseAllButton onCloseAll={handleCloseAllInfoWindows} disabled={activeInfoWindowCount === 0} />
         <OrganizeButton onOrganize={handleAlignInfoWindows} disabled={activeInfoWindowCount === 0} />

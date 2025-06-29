@@ -4,11 +4,9 @@ import { useState, useEffect } from "react"
 import MapContainer from "@/components/map-container"
 import { disasterCategories } from "@/types/disaster-types"
 import { generateDisasterMarkers } from "@/utils/generate-disaster-markers"
-// 静的マーカーをインポート
 import { staticDisasterMarkers } from "@/utils/static-markers"
 
 export default function MapPage() {
-  // クライアントサイドレンダリングを確認
   const [isClient, setIsClient] = useState(false)
   const [isError, setIsError] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
@@ -16,7 +14,6 @@ export default function MapPage() {
   useEffect(() => {
     setIsClient(true)
 
-    // エラーハンドリング
     const handleError = (event: ErrorEvent) => {
       console.error("グローバルエラーが発生しました:", event.error)
       setIsError(true)
@@ -38,20 +35,13 @@ export default function MapPage() {
     }
   }, [])
 
-  // 静岡県の中心座標（少し南に調整して全体が見えるように）
   const shizuokaCenterPosition = { lat: 34.95, lng: 138.38 }
 
-  // 既存のコードを変更して、動的生成と静的マーカーを組み合わせる
-  // 120個の災害マーカーを生成
   let disasterMarkers = []
   try {
-    // 動的生成を試みる
     const dynamicMarkers = generateDisasterMarkers()
-
-    // 動的マーカーが生成できた場合は使用、失敗した場合は静的マーカーを使用
     disasterMarkers = dynamicMarkers.length > 0 ? dynamicMarkers : staticDisasterMarkers
 
-    // 動的マーカーが空の配列の場合も静的マーカーを使用
     if (disasterMarkers.length === 0) {
       console.log("動的マーカーが生成されませんでした。静的マーカーを使用します。")
       disasterMarkers = staticDisasterMarkers
@@ -60,10 +50,9 @@ export default function MapPage() {
     console.error("災害マーカーの生成に失敗しました:", error)
     console.log("静的マーカーを使用します。")
     disasterMarkers = staticDisasterMarkers
-    setIsError(false) // エラー表示を抑制
+    setIsError(false)
   }
 
-  // エラーが発生した場合はエラーメッセージを表示
   if (isError) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-between p-4">
@@ -84,7 +73,6 @@ export default function MapPage() {
     )
   }
 
-  // クライアントサイドでない場合はローディング表示
   if (!isClient) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-between p-4">

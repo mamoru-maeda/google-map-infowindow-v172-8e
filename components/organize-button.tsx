@@ -3,7 +3,7 @@
 import type React from "react"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-// import { Grid3X3 } from 'lucide-react'
+import { Grid3X3 } from "lucide-react"
 
 interface OrganizeButtonProps {
   onOrganize: () => void
@@ -20,9 +20,10 @@ const OrganizeButton: React.FC<OrganizeButtonProps> = ({ onOrganize, disabled = 
             disabled={disabled}
             size="sm"
             variant="outline"
-            className="bg-white hover:bg-gray-50 border-gray-300 shadow-sm"
+            className="h-8 gap-1 bg-white backdrop-blur-sm hover:bg-white active:bg-white focus:bg-white"
           >
-            周辺整列
+            <Grid3X3 className="h-4 w-4" />
+            <span>周辺整列</span>
           </Button>
         </TooltipTrigger>
         <TooltipContent>

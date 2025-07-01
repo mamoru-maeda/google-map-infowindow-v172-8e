@@ -9,8 +9,6 @@ import CategoryFilter from "./category-filter"
 import AutoArrangeButton from "./auto-arrange-button"
 import CloseAllButton from "./close-all-button"
 import OrganizeButton from "./organize-button"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { localStorageUtils } from "@/lib/utils"
 import type { MarkerData, InfoWindowState, Category } from "@/types/map-types"
 import { useGoogleMaps } from "@/hooks/use-google-maps"
@@ -906,39 +904,6 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   return (
     <div className="relative w-full h-full">
       <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
-        {/* 吹き出し管理パネル */}
-        <div className="bg-white p-3 rounded-lg shadow-md border">
-          <div className="text-sm font-medium mb-2">吹き出し管理</div>
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-600">表示中:</span>
-              <Badge variant={activeInfoWindowCount >= MAX_INFOWINDOWS ? "destructive" : "default"}>
-                {activeInfoWindowCount}/{MAX_INFOWINDOWS}
-              </Badge>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-600">最小化:</span>
-              <Badge variant="secondary">
-                {Object.values(activeInfoWindows).filter((info) => info.isMinimized).length}
-              </Badge>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-600">整列済み:</span>
-              <Badge variant="outline">
-                {Object.values(activeInfoWindows).filter((info) => info.isOrganized).length}
-              </Badge>
-            </div>
-            <Button
-              onClick={handleOpen12InfoWindows}
-              size="sm"
-              className="w-full text-xs"
-              disabled={filteredMarkers.length < MAX_INFOWINDOWS}
-            >
-              12個同時表示テスト
-            </Button>
-          </div>
-        </div>
-
         <CategoryFilter
           categories={categories}
           selectedCategories={selectedCategories}

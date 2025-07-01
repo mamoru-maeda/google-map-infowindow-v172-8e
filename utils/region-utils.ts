@@ -379,13 +379,13 @@ export function adjustPositionToAvoidOverlap(
 }
 
 /**
- * 辺配置用の位置を計算する（重なり回避強化版）
+ * 辺配置用の位置を計算する（座標ベース配置強化版）
  */
 export function getEdgeAlignedPositions(
   activeInfoWindows: Record<string, InfoWindowState>,
   map: any,
 ): Record<string, { lat: number; lng: number }> {
-  console.log("🔧 辺配置位置計算を開始します")
+  console.log("🔧 座標ベース辺配置位置計算を開始します")
 
   const mapBounds = getMapBounds(map)
   if (!mapBounds) {
@@ -401,146 +401,166 @@ export function getEdgeAlignedPositions(
   const pixelToLatRatio = (mapBounds.north - mapBounds.south) / mapHeight
   const pixelToLngRatio = (mapBounds.east - mapBounds.west) / mapWidth
 
+  // 地図の中心座標を計算
+  const mapCenter = {
+    lat: (mapBounds.north + mapBounds.south) / 2,
+    lng: (mapBounds.east + mapBounds.west) / 2,
+  }
+
   console.log(`📏 地図サイズ: ${mapWidth}×${mapHeight}px`)
-  console.log(`📏 変換比率: lat=${pixelToLatRatio.toFixed(10)}, lng=${pixelToLngRatio.toFixed(10)}`)
+  console.log(`📏 地図中心: (${mapCenter.lat.toFixed(6)}, ${mapCenter.lng.toFixed(6)})`)
+  console.log(
+    `📏 地図境界: N=${mapBounds.north.toFixed(6)}, S=${mapBounds.south.toFixed(6)}, E=${mapBounds.east.toFixed(6)}, W=${mapBounds.west.toFixed(6)}`,
+  )
 
   const infoWindowEntries = Object.entries(activeInfoWindows)
   const positions: Record<string, { lat: number; lng: number }> = {}
 
   console.log(`📍 処理対象: ${infoWindowEntries.length}個の吹き出し`)
 
-  // 特別処理: 2個の場合は中心整列
-  if (infoWindowEntries.length === 2) {
-    console.log("🎯 2個の吹き出しを中心整列で配置します")
+  // 各マーカーを座標に基づいて辺に分類
+  const edgeGroups: Record<MapEdge, Array<{ markerId: string; infoWindow: InfoWindowState; distance: number }>> = {
+    north: [],
+    south: [],
+    east: [],
+    west: [],
+  }
 
-    const [entry1, entry2] = infoWindowEntries
-    const [markerId1, infoWindow1] = entry1
-    const [markerId2, infoWindow2] = entry2
+  // 各マーカーの位置を分析して適切な辺を決定
+  infoWindowEntries.forEach(([markerId, infoWindow]) => {
+    const markerLat = infoWindow.position.lat
+    const markerLng = infoWindow.position.lng
 
-    // 地図の中心を取得
-    const mapCenter = {
-      lat: (mapBounds.north + mapBounds.south) / 2,
-      lng: (mapBounds.east + mapBounds.west) / 2,
+    // 地図の中心からの相対位置を計算
+    const latFromCenter = markerLat - mapCenter.lat
+    const lngFromCenter = markerLng - mapCenter.lng
+
+    // 各辺からの距離を計算
+    const distanceToNorth = Math.abs(markerLat - mapBounds.north)
+    const distanceToSouth = Math.abs(markerLat - mapBounds.south)
+    const distanceToEast = Math.abs(markerLng - mapBounds.east)
+    const distanceToWest = Math.abs(markerLng - mapBounds.west)
+
+    // 座標ベースでの辺判定（地図を4つの領域に分割）
+    let assignedEdge: MapEdge
+
+    // 縦横の距離比較で主要な方向を決定
+    const latDistance = Math.min(distanceToNorth, distanceToSouth)
+    const lngDistance = Math.min(distanceToEast, distanceToWest)
+
+    if (latDistance < lngDistance) {
+      // 上下の辺に近い場合
+      if (markerLat > mapCenter.lat) {
+        assignedEdge = "north" // 地図の上半分にあるマーカーは上辺に
+      } else {
+        assignedEdge = "south" // 地図の下半分にあるマーカーは下辺に
+      }
+    } else {
+      // 左右の辺に近い場合
+      if (markerLng > mapCenter.lng) {
+        assignedEdge = "east" // 地図の右半分にあるマーカーは右辺に
+      } else {
+        assignedEdge = "west" // 地図の左半分にあるマーカーは左辺に
+      }
     }
 
-    console.log(`🎯 地図中心: (${mapCenter.lat.toFixed(6)}, ${mapCenter.lng.toFixed(6)})`)
+    // 距離情報と共に辺グループに追加
+    const distanceToAssignedEdge =
+      assignedEdge === "north"
+        ? distanceToNorth
+        : assignedEdge === "south"
+          ? distanceToSouth
+          : assignedEdge === "east"
+            ? distanceToEast
+            : distanceToWest
 
-    // 各マーカーが地図の左側か右側かを判定
-    const isLeftSide1 = infoWindow1.position.lng < mapCenter.lng
-    const isLeftSide2 = infoWindow2.position.lng < mapCenter.lng
-
-    console.log(`📍 ${markerId1}: ${isLeftSide1 ? "左側" : "右側"} (${infoWindow1.position.lng.toFixed(6)})`)
-    console.log(`📍 ${markerId2}: ${isLeftSide2 ? "左側" : "右側"} (${infoWindow2.position.lng.toFixed(6)})`)
-
-    // 配置先の辺を決定（修正版：左側のマーカーは左辺に、右側のマーカーは右辺に）
-    const placement1 = {
-      markerId: markerId1,
-      side: isLeftSide1 ? "left" : "right", // 左側のマーカーは左辺に、右側のマーカーは右辺に配置
-    }
-    const placement2 = {
-      markerId: markerId2,
-      side: isLeftSide2 ? "left" : "right", // 左側のマーカーは左辺に、右側のマーカーは右辺に配置
-    }
+    edgeGroups[assignedEdge].push({
+      markerId,
+      infoWindow,
+      distance: distanceToAssignedEdge,
+    })
 
     console.log(
-      `🎯 配置計画: ${placement1.markerId} → ${placement1.side}辺, ${placement2.markerId} → ${placement2.side}辺`,
+      `📍 ${markerId}: マーカー位置(${markerLat.toFixed(6)}, ${markerLng.toFixed(6)}) → ${assignedEdge}辺に配置予定`,
     )
+  })
 
-    // 各辺での配置位置を計算
-    const placements = [placement1, placement2]
+  // 各辺のグループ内で距離順にソート（近い順）
+  Object.keys(edgeGroups).forEach((edge) => {
+    edgeGroups[edge as MapEdge].sort((a, b) => a.distance - b.distance)
+    console.log(`📊 ${edge}辺: ${edgeGroups[edge as MapEdge].length}個の吹き出し`)
+  })
 
-    placements.forEach((placement) => {
+  // 各辺に配置
+  Object.entries(edgeGroups).forEach(([edge, items]) => {
+    if (items.length === 0) return
+
+    const edgeKey = edge as MapEdge
+
+    items.forEach((item, index) => {
       let targetLat: number
       let targetLng: number
 
-      if (placement.side === "left") {
-        // 左辺に配置
-        targetLng = mapBounds.west + EDGE_MARGIN * pixelToLngRatio + (INFOWINDOW_WIDTH / 2) * pixelToLngRatio
-        targetLat = mapCenter.lat
-      } else {
-        // 右辺に配置
-        targetLng = mapBounds.east - EDGE_MARGIN * pixelToLngRatio - (INFOWINDOW_WIDTH / 2) * pixelToLngRatio
-        targetLat = mapCenter.lat
+      const totalItemsOnEdge = items.length
+      const positionRatio = totalItemsOnEdge === 1 ? 0.5 : index / (totalItemsOnEdge - 1)
+
+      switch (edgeKey) {
+        case "north":
+          targetLat = mapBounds.north - EDGE_MARGIN * pixelToLatRatio - (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio
+          if (totalItemsOnEdge === 1) {
+            // 1個の場合は中央に配置
+            targetLng = mapCenter.lng
+          } else {
+            // 複数の場合は等間隔で配置
+            const startLng = mapBounds.west + (INFOWINDOW_WIDTH / 2) * pixelToLngRatio + EDGE_MARGIN * pixelToLngRatio
+            const endLng = mapBounds.east - (INFOWINDOW_WIDTH / 2) * pixelToLngRatio - EDGE_MARGIN * pixelToLngRatio
+            targetLng = startLng + (endLng - startLng) * positionRatio
+          }
+          break
+
+        case "south":
+          targetLat = mapBounds.south + EDGE_MARGIN * pixelToLatRatio + (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio
+          if (totalItemsOnEdge === 1) {
+            targetLng = mapCenter.lng
+          } else {
+            const startLng = mapBounds.west + (INFOWINDOW_WIDTH / 2) * pixelToLngRatio + EDGE_MARGIN * pixelToLngRatio
+            const endLng = mapBounds.east - (INFOWINDOW_WIDTH / 2) * pixelToLngRatio - EDGE_MARGIN * pixelToLngRatio
+            targetLng = startLng + (endLng - startLng) * positionRatio
+          }
+          break
+
+        case "east":
+          targetLng = mapBounds.east - EDGE_MARGIN * pixelToLngRatio - (INFOWINDOW_WIDTH / 2) * pixelToLngRatio
+          if (totalItemsOnEdge === 1) {
+            targetLat = mapCenter.lat
+          } else {
+            const startLat = mapBounds.south + (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio + EDGE_MARGIN * pixelToLatRatio
+            const endLat = mapBounds.north - (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio - EDGE_MARGIN * pixelToLatRatio
+            targetLat = startLat + (endLat - startLat) * positionRatio
+          }
+          break
+
+        case "west":
+          targetLng = mapBounds.west + EDGE_MARGIN * pixelToLngRatio + (INFOWINDOW_WIDTH / 2) * pixelToLngRatio
+          if (totalItemsOnEdge === 1) {
+            targetLat = mapCenter.lat
+          } else {
+            const startLat = mapBounds.south + (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio + EDGE_MARGIN * pixelToLatRatio
+            const endLat = mapBounds.north - (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio - EDGE_MARGIN * pixelToLatRatio
+            targetLat = startLat + (endLat - startLat) * positionRatio
+          }
+          break
       }
 
-      positions[placement.markerId] = { lat: targetLat, lng: targetLng }
+      positions[item.markerId] = { lat: targetLat, lng: targetLng }
 
       console.log(
-        `✅ ${placement.markerId} を${placement.side}辺に配置: (${targetLat.toFixed(6)}, ${targetLng.toFixed(6)})`,
+        `✅ ${item.markerId} を${edgeKey}辺の${index + 1}/${totalItemsOnEdge}番目に配置: (${targetLat.toFixed(6)}, ${targetLng.toFixed(6)})`,
       )
     })
-
-    console.log("🎉 中心整列配置が完了しました")
-    return positions
-  }
-
-  // 3個以上の場合は従来の辺配置ロジック
-  console.log("🔧 3個以上の吹き出しを辺配置で処理します")
-
-  // 各辺に配置する吹き出しの数を計算
-  const totalCount = infoWindowEntries.length
-  const edgesCount = Math.min(4, totalCount) // 最大4辺まで使用
-  const itemsPerEdge = Math.ceil(totalCount / edgesCount)
-
-  console.log(`📊 配置計画: ${totalCount}個を${edgesCount}辺に分散 (1辺あたり最大${itemsPerEdge}個)`)
-
-  const edges: MapEdge[] = ["north", "east", "south", "west"]
-  let currentEdgeIndex = 0
-  let currentEdgeItemCount = 0
-
-  infoWindowEntries.forEach(([markerId, infoWindow], index) => {
-    const edge = edges[currentEdgeIndex]
-    const positionInEdge = currentEdgeItemCount
-
-    let targetLat: number
-    let targetLng: number
-
-    switch (edge) {
-      case "north":
-        targetLat = mapBounds.north - EDGE_MARGIN * pixelToLatRatio - (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio
-        targetLng =
-          mapBounds.west +
-          ((mapBounds.east - mapBounds.west) * (positionInEdge + 1)) / (itemsPerEdge + 1) +
-          (INFOWINDOW_WIDTH / 2) * pixelToLngRatio
-        break
-      case "south":
-        targetLat = mapBounds.south + EDGE_MARGIN * pixelToLatRatio + (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio
-        targetLng =
-          mapBounds.west +
-          ((mapBounds.east - mapBounds.west) * (positionInEdge + 1)) / (itemsPerEdge + 1) +
-          (INFOWINDOW_WIDTH / 2) * pixelToLngRatio
-        break
-      case "east":
-        targetLng = mapBounds.east - EDGE_MARGIN * pixelToLngRatio - (INFOWINDOW_WIDTH / 2) * pixelToLngRatio
-        targetLat =
-          mapBounds.south +
-          ((mapBounds.north - mapBounds.south) * (positionInEdge + 1)) / (itemsPerEdge + 1) +
-          (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio
-        break
-      case "west":
-        targetLng = mapBounds.west + EDGE_MARGIN * pixelToLngRatio + (INFOWINDOW_WIDTH / 2) * pixelToLngRatio
-        targetLat =
-          mapBounds.south +
-          ((mapBounds.north - mapBounds.south) * (positionInEdge + 1)) / (itemsPerEdge + 1) +
-          (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio
-        break
-    }
-
-    positions[markerId] = { lat: targetLat, lng: targetLng }
-
-    console.log(
-      `✅ ${markerId} を${edge}辺の${positionInEdge + 1}番目に配置: (${targetLat.toFixed(6)}, ${targetLng.toFixed(6)})`,
-    )
-
-    // 次の配置位置を計算
-    currentEdgeItemCount++
-    if (currentEdgeItemCount >= itemsPerEdge) {
-      currentEdgeIndex++
-      currentEdgeItemCount = 0
-    }
   })
 
-  console.log("🎉 辺配置が完了しました")
+  console.log("🎉 座標ベース辺配置が完了しました")
   return positions
 }
 

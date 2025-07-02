@@ -9,6 +9,8 @@ import CategoryFilter from "./category-filter"
 import AutoArrangeButton from "./auto-arrange-button"
 import CloseAllButton from "./close-all-button"
 import OrganizeButton from "./organize-button"
+import SnapshotButton from "./snapshot-button"
+import { Button } from "@/components/ui/button"
 import { localStorageUtils } from "@/lib/utils"
 import type { MarkerData, InfoWindowState, Category } from "@/types/map-types"
 import { useGoogleMaps } from "@/hooks/use-google-maps"
@@ -20,6 +22,7 @@ import {
   checkOverlap,
   adjustPositionToAvoidOverlap,
 } from "@/utils/region-utils"
+import cloneDeep from "lodash/cloneDeep"
 
 interface MapContainerProps {
   center: {
@@ -33,7 +36,16 @@ interface MapContainerProps {
 
 const STORAGE_KEY = "google-map-infowindows-v14"
 const CATEGORY_FILTER_KEY = "google-map-categories-v14"
+const SNAPSHOT_STORAGE_KEY = "google-map-snapshots-v1"
 const MAX_INFOWINDOWS = 12 // 最大12個まで同時表示可能
+
+// スナップショットの型定義
+interface Snapshot {
+  id: string
+  name: string
+  timestamp: number
+  infoWindows: Record<string, InfoWindowState>
+}
 
 // グローバルに google 変数を宣言
 declare global {
@@ -57,6 +69,7 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   const [isDraggingAny, setIsDraggingAny] = useState(isMapDragging)
   const [currentDraggingId, setCurrentDraggingId] = useState<string | null>(null)
   const [initAttempts, setInitAttempts] = useState(0)
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([])
 
   console.log(`🎯 最大吹き出し数: ${MAX_INFOWINDOWS}個`)
   console.log(`📊 現在の吹き出し数: ${Object.keys(activeInfoWindows).length}個`)
@@ -189,6 +202,12 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
     localStorageUtils.saveData(CATEGORY_FILTER_KEY, categories)
   }, [])
 
+  // スナップショットを読み込む
+  const loadSnapshots = useCallback(() => {
+    const savedSnapshots = localStorageUtils.loadData(SNAPSHOT_STORAGE_KEY, [])
+    setSnapshots(savedSnapshots)
+  }, [])
+
   // 整頓された吹き出しの位置を再計算する関数
   const recalculateOrganizedPositions = useCallback(() => {
     if (!map) {
@@ -275,6 +294,9 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
           setSelectedCategories(categories.map((cat) => cat.id))
           saveCategoryFilterState(categories.map((cat) => cat.id))
         }
+
+        // スナップショットを読み込む
+        loadSnapshots()
       })
 
       return true
@@ -292,6 +314,7 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
     loadCategoryFilterState,
     saveCategoryFilterState,
     recalculateOrganizedPositions,
+    loadSnapshots,
   ])
 
   // マップの初期化を試みる
@@ -368,35 +391,6 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
     },
     [saveInfoWindowStates],
   )
-
-  // 12個の吹き出しを一度に開くテスト関数
-  const handleOpen12InfoWindows = useCallback(() => {
-    console.log("🎯 12個の吹き出しを一度に開くテスト開始")
-
-    // 表示されているマーカーを取得
-    const visibleMarkers = markers.filter((marker) => selectedCategories.includes(marker.category))
-    const testMarkers = visibleMarkers.slice(0, MAX_INFOWINDOWS)
-
-    if (testMarkers.length < MAX_INFOWINDOWS) {
-      console.log(`⚠️ テスト用マーカーが不足: ${testMarkers.length}個のみ利用可能`)
-    }
-
-    // 12個の吹き出しを一度に開く
-    const newInfoWindows: Record<string, InfoWindowState> = {}
-    testMarkers.forEach((marker) => {
-      newInfoWindows[marker.id] = {
-        markerId: marker.id,
-        position: { ...marker.position },
-        isMinimized: false,
-        userPositioned: false,
-        isOrganized: false,
-      }
-    })
-
-    setActiveInfoWindows(newInfoWindows)
-    saveInfoWindowStates(newInfoWindows)
-    console.log(`✅ ${Object.keys(newInfoWindows).length}個の吹き出しを同時表示`)
-  }, [markers, selectedCategories, saveInfoWindowStates])
 
   // 吹き出しを閉じるハンドラー
   const handleCloseInfoWindow = useCallback(
@@ -657,6 +651,47 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
 
       // 新しい吹き出し状態を作成
       const newInfoWindows: Record<string, InfoWindowState> = { ...resetInfoWindows }
+
+      /**
+       * 吹き出しの重なりを再帰的に解消する
+       */
+      const resolveOverlaps = (
+        info: Record<string, InfoWindowState>,
+        maxPass = 10,
+      ): Record<string, InfoWindowState> => {
+        if (!map) return info
+
+        const current = cloneDeep(info)
+        for (let pass = 0; pass < maxPass; pass++) {
+          let fixedAny = false
+
+          // すべての境界を計算
+          const boundsArr = Object.entries(current).map(([id, i]) =>
+            calculateInfoWindowBounds(i.position.lat, i.position.lng, map, id),
+          )
+
+          // ペアで重なりチェック
+          for (let i = 0; i < boundsArr.length; i++) {
+            for (let j = i + 1; j < boundsArr.length; j++) {
+              const b1 = boundsArr[i]
+              const b2 = boundsArr[j]
+              if (checkOverlap(b1, b2)) {
+                // b2 を少し移動して回避（衝突を見つけた方を優先的にずらす）
+                const otherBounds = boundsArr.filter((b) => b.id !== b2.id)
+                const newPos = adjustPositionToAvoidOverlap(b2, otherBounds, map, 40)
+                current[b2.id].position = newPos
+
+                // 更新フラグ
+                fixedAny = true
+              }
+            }
+          }
+
+          if (!fixedAny) break // これ以上重なりなし
+        }
+        return current
+      }
+
       let successCount = 0
 
       activeMarkers.forEach((marker) => {
@@ -689,8 +724,9 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
       })
 
       console.log(`💾 新しい吹き出し位置を保存中 (成功: ${successCount}個)`)
-      setActiveInfoWindows(newInfoWindows)
-      saveInfoWindowStates(newInfoWindows)
+      const resolvedInfoWindows = resolveOverlaps(newInfoWindows)
+      setActiveInfoWindows(resolvedInfoWindows)
+      saveInfoWindowStates(resolvedInfoWindows)
 
       if (successCount === activeMarkers.length) {
         console.log("🎉 辺配置整列が完全に成功しました")
@@ -702,7 +738,7 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
       console.log(`🔍 重なり確認を開始します...`)
 
       const finalBounds: any[] = []
-      Object.entries(newInfoWindows).forEach(([id, infoWindow]) => {
+      Object.entries(resolvedInfoWindows).forEach(([id, infoWindow]) => {
         const bounds = calculateInfoWindowBounds(infoWindow.position.lat, infoWindow.position.lng, map, id)
         finalBounds.push(bounds)
       })
@@ -776,6 +812,70 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
       // エラーが発生してもアプリケーションが停止しないようにする
     }
   }, [map, markers, selectedCategories, activeInfoWindows, saveInfoWindowStates])
+
+  // スナップショット機能
+  const handleSaveSnapshot = useCallback(() => {
+    if (Object.keys(activeInfoWindows).length === 0) {
+      alert("保存する吹き出しがありません。")
+      return
+    }
+
+    const timestamp = Date.now()
+    const snapshotName = `${new Date(timestamp).toLocaleString("ja-JP")}`
+
+    const newSnapshot: Snapshot = {
+      id: `snapshot_${timestamp}`,
+      name: snapshotName,
+      timestamp,
+      infoWindows: { ...activeInfoWindows },
+    }
+
+    // 既存のスナップショットを読み込み
+    const existingSnapshots = localStorageUtils.loadData(SNAPSHOT_STORAGE_KEY, []) as Snapshot[]
+    const updatedSnapshots = [...existingSnapshots, newSnapshot]
+
+    // スナップショットを保存
+    localStorageUtils.saveData(SNAPSHOT_STORAGE_KEY, updatedSnapshots)
+
+    // 状態を更新
+    setSnapshots(updatedSnapshots)
+
+    const actualCount = Object.keys(newSnapshot.infoWindows).length
+    alert(`スナップショットを保存しました: ${snapshotName} (${actualCount}個の吹き出し)`)
+    console.log(`📸 スナップショット保存: ${actualCount}個の吹き出し`)
+    console.log("保存されたスナップショット詳細:", newSnapshot)
+  }, [activeInfoWindows])
+
+  // スナップショットを復元
+  const handleRestoreSnapshot = useCallback(
+    (snapshot: Snapshot) => {
+      console.log("復元するスナップショット:", snapshot)
+      console.log("復元する吹き出し数:", Object.keys(snapshot.infoWindows).length)
+
+      setActiveInfoWindows(snapshot.infoWindows)
+      saveInfoWindowStates(snapshot.infoWindows)
+
+      // スナップショット一覧を再読み込み
+      loadSnapshots()
+
+      alert(`スナップショットを復元しました: ${snapshot.name}`)
+      console.log("復元完了:", snapshot.infoWindows)
+    },
+    [saveInfoWindowStates, loadSnapshots],
+  )
+
+  // スナップショットを削除
+  const handleDeleteSnapshot = useCallback(
+    (snapshotId: string) => {
+      const updatedSnapshots = snapshots.filter((s) => s.id !== snapshotId)
+      setSnapshots(updatedSnapshots)
+      localStorageUtils.saveData(SNAPSHOT_STORAGE_KEY, updatedSnapshots)
+
+      console.log(`スナップショット削除: ${snapshotId}`)
+      console.log("残りのスナップショット数:", updatedSnapshots.length)
+    },
+    [snapshots],
+  )
 
   // フィルタリングされたマーカー
   const filteredMarkers = markers.filter((marker) => selectedCategories.includes(marker.category))
@@ -916,6 +1016,63 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
           <AutoArrangeButton onAutoArrange={handleAutoArrange} />
         </div>
         <CloseAllButton onCloseAll={handleCloseAllInfoWindows} disabled={activeInfoWindowCount === 0} />
+        <SnapshotButton
+          onSnapshot={handleSaveSnapshot}
+          disabled={activeInfoWindowCount === 0}
+          activeCount={activeInfoWindowCount}
+        />
+
+        {snapshots.length > 0 && (
+          <div className="bg-green-50 rounded-lg p-3 border border-green-200 max-w-xs">
+            <h4 className="font-medium text-green-900 mb-2 text-sm">保存されたスナップショット</h4>
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {snapshots.map((snapshot) => {
+                // 実際に保存されている吹き出しデータから正確な個数を計算
+                const savedInfoWindows = snapshot.infoWindows || {}
+                const validInfoWindows = Object.entries(savedInfoWindows).filter(([id, infoWindow]) => {
+                  // 有効な吹き出しデータかチェック
+                  return (
+                    infoWindow &&
+                    infoWindow.position &&
+                    typeof infoWindow.position.lat === "number" &&
+                    typeof infoWindow.position.lng === "number"
+                  )
+                })
+                const actualCount = validInfoWindows.length
+
+                return (
+                  <div
+                    key={snapshot.id}
+                    className="flex justify-between items-center p-2 bg-white rounded border text-xs"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="text-green-800 truncate font-medium">{snapshot.name}</div>
+                      <div className="text-green-600">{actualCount}個の吹き出し</div>
+                    </div>
+                    <div className="flex gap-1 ml-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRestoreSnapshot(snapshot)}
+                        className="text-xs px-2 py-1 h-auto"
+                      >
+                        復元
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => handleDeleteSnapshot(snapshot.id)}
+                        className="text-xs px-2 py-1 h-auto"
+                      >
+                        削除
+                      </Button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div ref={mapRef} className="w-full h-full" />

@@ -5,13 +5,23 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { localStorageUtils } from "@/lib/utils"
+import SnapshotButton from "./snapshot-button"
 import type { InfoWindowState } from "@/types/map-types"
 
 const STORAGE_KEY = "google-map-infowindows-v14"
+const SNAPSHOT_STORAGE_KEY = "google-map-snapshots-v1"
 const MAX_INFOWINDOWS = 12
+
+interface Snapshot {
+  id: string
+  name: string
+  timestamp: number
+  infoWindows: Record<string, InfoWindowState>
+}
 
 export default function InfoWindowManagement() {
   const [activeInfoWindows, setActiveInfoWindows] = useState<Record<string, InfoWindowState>>({})
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([])
 
   // ローカルストレージから吹き出し状態を読み込む
   useEffect(() => {
@@ -20,11 +30,18 @@ export default function InfoWindowManagement() {
       setActiveInfoWindows(savedStates)
     }
 
+    const loadSnapshots = () => {
+      const savedSnapshots = localStorageUtils.loadData(SNAPSHOT_STORAGE_KEY, [])
+      setSnapshots(savedSnapshots)
+    }
+
     loadInfoWindowStates()
+    loadSnapshots()
 
     // ストレージの変更を監視
     const handleStorageChange = () => {
       loadInfoWindowStates()
+      loadSnapshots()
     }
 
     window.addEventListener("storage", handleStorageChange)
@@ -48,6 +65,44 @@ export default function InfoWindowManagement() {
   const handleCloseAllInfoWindows = () => {
     setActiveInfoWindows({})
     localStorageUtils.saveData(STORAGE_KEY, {})
+  }
+
+  // スナップショットを保存
+  const handleSaveSnapshot = () => {
+    if (Object.keys(activeInfoWindows).length === 0) {
+      alert("保存する吹き出しがありません。")
+      return
+    }
+
+    const timestamp = Date.now()
+    const snapshotName = `スナップショット ${new Date(timestamp).toLocaleString("ja-JP")}`
+
+    const newSnapshot: Snapshot = {
+      id: `snapshot_${timestamp}`,
+      name: snapshotName,
+      timestamp,
+      infoWindows: { ...activeInfoWindows },
+    }
+
+    const updatedSnapshots = [...snapshots, newSnapshot]
+    setSnapshots(updatedSnapshots)
+    localStorageUtils.saveData(SNAPSHOT_STORAGE_KEY, updatedSnapshots)
+
+    alert(`スナップショットを保存しました: ${snapshotName}`)
+  }
+
+  // スナップショットを復元
+  const handleRestoreSnapshot = (snapshot: Snapshot) => {
+    setActiveInfoWindows(snapshot.infoWindows)
+    localStorageUtils.saveData(STORAGE_KEY, snapshot.infoWindows)
+    alert(`スナップショットを復元しました: ${snapshot.name}`)
+  }
+
+  // スナップショットを削除
+  const handleDeleteSnapshot = (snapshotId: string) => {
+    const updatedSnapshots = snapshots.filter((s) => s.id !== snapshotId)
+    setSnapshots(updatedSnapshots)
+    localStorageUtils.saveData(SNAPSHOT_STORAGE_KEY, updatedSnapshots)
   }
 
   const activeInfoWindowCount = Object.keys(activeInfoWindows).length
@@ -87,6 +142,8 @@ export default function InfoWindowManagement() {
           <p className="text-xs text-gray-500 text-center">※ この機能は地図ページでのみ利用できます</p>
         </div>
 
+        <SnapshotButton onSnapshot={handleSaveSnapshot} disabled={activeInfoWindowCount === 0} />
+
         <Button
           onClick={handleCloseAllInfoWindows}
           variant="destructive"
@@ -95,6 +152,40 @@ export default function InfoWindowManagement() {
         >
           すべての吹き出しを閉じる
         </Button>
+
+        {snapshots.length > 0 && (
+          <div className="mt-4 p-3 bg-green-50 rounded-lg">
+            <h4 className="font-medium text-green-900 mb-2">保存されたスナップショット</h4>
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {snapshots.map((snapshot) => (
+                <div key={snapshot.id} className="flex justify-between items-center p-2 bg-white rounded border">
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-green-800 truncate">{snapshot.name}</div>
+                    <div className="text-xs text-green-600">{Object.keys(snapshot.infoWindows).length}個の吹き出し</div>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleRestoreSnapshot(snapshot)}
+                      className="text-xs"
+                    >
+                      復元
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      onClick={() => handleDeleteSnapshot(snapshot.id)}
+                      className="text-xs"
+                    >
+                      削除
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {activeInfoWindowCount > 0 && (
           <div className="mt-4 p-3 bg-blue-50 rounded-lg">

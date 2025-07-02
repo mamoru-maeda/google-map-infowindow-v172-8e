@@ -478,7 +478,7 @@ const InfoCard: React.FC<InfoCardProps> = ({
 
           {reportDate && (
             <div className="mb-2 text-xs text-gray-500" style={{ fontSize: `${fontSizes.date}px` }}>
-              受信日: {reportDate}
+              受信日時: {reportDate}
             </div>
           )}
 

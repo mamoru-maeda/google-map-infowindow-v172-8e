@@ -38,7 +38,7 @@ interface InfoWindowBounds {
 const INFOWINDOW_WIDTH = 280
 const INFOWINDOW_HEIGHT = 360
 
-// 地図の境界からの最小距離（ピクセル単位）
+// 地図の境界からの最小距離（ピクセル単位）- 10pxに変更
 const EDGE_MARGIN = 10
 
 // 吹き出し間の最小距離（ピクセル単位）
@@ -491,7 +491,7 @@ export function getEdgeAlignedPositions(
     console.log(`📊 ${edge}辺: ${edgeGroups[edge as MapEdge].length}個の吹き出し`)
   })
 
-  // 各辺に配置
+  // 各辺に配置（10px内側に配置）
   Object.entries(edgeGroups).forEach(([edge, items]) => {
     if (items.length === 0) return
 
@@ -506,12 +506,13 @@ export function getEdgeAlignedPositions(
 
       switch (edgeKey) {
         case "north":
+          // 上辺から10px内側に配置
           targetLat = mapBounds.north - EDGE_MARGIN * pixelToLatRatio - (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio
           if (totalItemsOnEdge === 1) {
             // 1個の場合は中央に配置
             targetLng = mapCenter.lng
           } else {
-            // 複数の場合は等間隔で配置
+            // 複数の場合は等間隔で配置（左右10px内側）
             const startLng = mapBounds.west + (INFOWINDOW_WIDTH / 2) * pixelToLngRatio + EDGE_MARGIN * pixelToLngRatio
             const endLng = mapBounds.east - (INFOWINDOW_WIDTH / 2) * pixelToLngRatio - EDGE_MARGIN * pixelToLngRatio
             targetLng = startLng + (endLng - startLng) * positionRatio
@@ -519,10 +520,12 @@ export function getEdgeAlignedPositions(
           break
 
         case "south":
+          // 下辺から10px内側に配置
           targetLat = mapBounds.south + EDGE_MARGIN * pixelToLatRatio + (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio
           if (totalItemsOnEdge === 1) {
             targetLng = mapCenter.lng
           } else {
+            // 複数の場合は等間隔で配置（左右10px内側）
             const startLng = mapBounds.west + (INFOWINDOW_WIDTH / 2) * pixelToLngRatio + EDGE_MARGIN * pixelToLngRatio
             const endLng = mapBounds.east - (INFOWINDOW_WIDTH / 2) * pixelToLngRatio - EDGE_MARGIN * pixelToLngRatio
             targetLng = startLng + (endLng - startLng) * positionRatio
@@ -530,10 +533,12 @@ export function getEdgeAlignedPositions(
           break
 
         case "east":
+          // 右辺から10px内側に配置
           targetLng = mapBounds.east - EDGE_MARGIN * pixelToLngRatio - (INFOWINDOW_WIDTH / 2) * pixelToLngRatio
           if (totalItemsOnEdge === 1) {
             targetLat = mapCenter.lat
           } else {
+            // 複数の場合は等間隔で配置（上下10px内側）
             const startLat = mapBounds.south + (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio + EDGE_MARGIN * pixelToLatRatio
             const endLat = mapBounds.north - (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio - EDGE_MARGIN * pixelToLatRatio
             targetLat = startLat + (endLat - startLat) * positionRatio
@@ -541,10 +546,12 @@ export function getEdgeAlignedPositions(
           break
 
         case "west":
+          // 左辺から10px内側に配置
           targetLng = mapBounds.west + EDGE_MARGIN * pixelToLngRatio + (INFOWINDOW_WIDTH / 2) * pixelToLngRatio
           if (totalItemsOnEdge === 1) {
             targetLat = mapCenter.lat
           } else {
+            // 複数の場合は等間隔で配置（上下10px内側）
             const startLat = mapBounds.south + (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio + EDGE_MARGIN * pixelToLatRatio
             const endLat = mapBounds.north - (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio - EDGE_MARGIN * pixelToLatRatio
             targetLat = startLat + (endLat - startLat) * positionRatio

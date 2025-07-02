@@ -31,10 +31,18 @@ interface SnapshotData {
 interface SnapshotButtonProps {
   infoWindows: InfoWindowState[]
   onRestoreSnapshot: (snapshot: SnapshotData) => void
-  activeCount: number
+  activeCount?: number
+  onSnapshot?: () => void
+  disabled?: boolean
 }
 
-const SnapshotButton: React.FC<SnapshotButtonProps> = ({ infoWindows, onRestoreSnapshot, activeCount }) => {
+const SnapshotButton: React.FC<SnapshotButtonProps> = ({
+  infoWindows,
+  onRestoreSnapshot,
+  activeCount = 0,
+  onSnapshot,
+  disabled = false,
+}) => {
   const [snapshots, setSnapshots] = useState<SnapshotData[]>([])
   const { toast } = useToast()
 
@@ -80,12 +88,18 @@ const SnapshotButton: React.FC<SnapshotButtonProps> = ({ infoWindows, onRestoreS
     })
   }
 
-  const backgroundClass = activeCount === 0 ? "bg-white/85" : "bg-white"
+  const backgroundClass = activeCount === 0 ? "bg-white/50" : "bg-white"
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className={`h-8 gap-1 ${backgroundClass}`}>
+        <Button
+          variant="outline"
+          size="sm"
+          className={`h-8 gap-1 ${backgroundClass}`}
+          onClick={onSnapshot}
+          disabled={disabled}
+        >
           <Camera className="h-4 w-4" />
           <span>スナップショット</span>
         </Button>

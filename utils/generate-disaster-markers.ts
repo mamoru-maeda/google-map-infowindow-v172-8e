@@ -103,7 +103,7 @@ const DISASTER_DESCRIPTION_TEMPLATES = [
 ]
 
 // ランダムな日付を生成（過去3ヶ月以内）
-function generateRandomDate(): string {
+function generateRandomDateTime(): string {
   const now = new Date()
   const threeMonthsAgo = new Date()
   threeMonthsAgo.setMonth(now.getMonth() - 3)
@@ -111,7 +111,14 @@ function generateRandomDate(): string {
   const randomTimestamp = threeMonthsAgo.getTime() + Math.random() * (now.getTime() - threeMonthsAgo.getTime())
   const randomDate = new Date(randomTimestamp)
 
-  return randomDate.toISOString().split("T")[0]
+  // 日本時間でフォーマット（YYYY/MM/DD HH:MM形式）
+  const year = randomDate.getFullYear()
+  const month = String(randomDate.getMonth() + 1).padStart(2, "0")
+  const day = String(randomDate.getDate()).padStart(2, "0")
+  const hours = String(randomDate.getHours()).padStart(2, "0")
+  const minutes = String(randomDate.getMinutes()).padStart(2, "0")
+
+  return `${year}/${month}/${day} ${hours}:${minutes}`
 }
 
 // 重み付きランダム選択（都市の重要度に応じて選択確率を調整）
@@ -238,7 +245,7 @@ export function generateDisasterMarkers(): DisasterMarker[] {
             const status = statuses[randomStatusIndex]
 
             // ランダムな日付を生成
-            const reportDate = generateRandomDate()
+            const reportDate = generateRandomDateTime()
 
             // マーカーを作成
             markers.push({

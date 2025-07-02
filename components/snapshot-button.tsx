@@ -12,8 +12,8 @@ interface SnapshotButtonProps {
 }
 
 const SnapshotButton: React.FC<SnapshotButtonProps> = ({ onSnapshot, disabled = false, activeCount = 0 }) => {
-  // 1つ以上の吹き出しが表示されている場合は白色（透過率0％）、そうでなければ透過率を下げた背景色
-  const backgroundClass = activeCount > 0 ? "bg-white" : "bg-white/15"
+  // 1つ以上の吹き出しが表示されている場合は白色（透過率0％）、そうでなければ白色（透過率85%）
+  const backgroundClass = activeCount > 0 ? "bg-white" : "bg-white/85"
 
   return (
     <TooltipProvider>

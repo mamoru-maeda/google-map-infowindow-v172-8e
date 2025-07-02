@@ -657,11 +657,13 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
        */
       const resolveOverlaps = (
         info: Record<string, InfoWindowState>,
-        maxPass = 10,
+        pixelOffset = 60,
+        maxPass = 20,
       ): Record<string, InfoWindowState> => {
         if (!map) return info
 
         const current = cloneDeep(info)
+
         for (let pass = 0; pass < maxPass; pass++) {
           let fixedAny = false
 
@@ -675,13 +677,12 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
             for (let j = i + 1; j < boundsArr.length; j++) {
               const b1 = boundsArr[i]
               const b2 = boundsArr[j]
-              if (checkOverlap(b1, b2)) {
-                // b2 を少し移動して回避（衝突を見つけた方を優先的にずらす）
-                const otherBounds = boundsArr.filter((b) => b.id !== b2.id)
-                const newPos = adjustPositionToAvoidOverlap(b2, otherBounds, map, 40)
-                current[b2.id].position = newPos
 
-                // 更新フラグ
+              if (checkOverlap(b1, b2)) {
+                // b2 を少し移動して回避
+                const otherBounds = boundsArr.filter((b) => b.id !== b2.id)
+                const newPos = adjustPositionToAvoidOverlap(b2, otherBounds, map, pixelOffset)
+                current[b2.id].position = newPos
                 fixedAny = true
               }
             }
@@ -689,6 +690,7 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
 
           if (!fixedAny) break // これ以上重なりなし
         }
+
         return current
       }
 
@@ -774,6 +776,16 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
         }
       }
 
+      // --- 追加: まだ重なりが残る場合は再度解消を試みる ---
+      if (totalOverlapCount > 0) {
+        console.warn(`🔄 追加の重なり解消パスを実行します (${totalOverlapCount} overlaps detected)`)
+
+        const finalResolved = resolveOverlaps(resolvedInfoWindows, 80, 10) // さらに大きくずらす
+        setActiveInfoWindows(finalResolved)
+        saveInfoWindowStates(finalResolved)
+        console.log("✅ 追加パス後に状態を更新しました")
+      }
+
       // 重なり確認結果の出力
       if (totalOverlapCount === 0) {
         console.log(`✅ 重なり確認完了: 吹き出し同士の重なりは完全に回避されています！`)
@@ -813,38 +825,11 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
     }
   }, [map, markers, selectedCategories, activeInfoWindows, saveInfoWindowStates])
 
-  // スナップショット機能
-  const handleSaveSnapshot = useCallback(() => {
-    if (Object.keys(activeInfoWindows).length === 0) {
-      alert("保存する吹き出しがありません。")
-      return
-    }
-
-    const timestamp = Date.now()
-    const snapshotName = `${new Date(timestamp).toLocaleString("ja-JP")}`
-
-    const newSnapshot: Snapshot = {
-      id: `snapshot_${timestamp}`,
-      name: snapshotName,
-      timestamp,
-      infoWindows: { ...activeInfoWindows },
-    }
-
-    // 既存のスナップショットを読み込み
-    const existingSnapshots = localStorageUtils.loadData(SNAPSHOT_STORAGE_KEY, []) as Snapshot[]
-    const updatedSnapshots = [...existingSnapshots, newSnapshot]
-
-    // スナップショットを保存
-    localStorageUtils.saveData(SNAPSHOT_STORAGE_KEY, updatedSnapshots)
-
-    // 状態を更新
-    setSnapshots(updatedSnapshots)
-
-    const actualCount = Object.keys(newSnapshot.infoWindows).length
-    alert(`スナップショットを保存しました: ${snapshotName} (${actualCount}個の吹き出し)`)
-    console.log(`📸 スナップショット保存: ${actualCount}個の吹き出し`)
-    console.log("保存されたスナップショット詳細:", newSnapshot)
-  }, [activeInfoWindows])
+  // スナップショット状態更新のみ（重複保存を避けるため）
+  const handleSnapshotStateUpdate = useCallback(() => {
+    // スナップショット一覧を再読み込み
+    loadSnapshots()
+  }, [loadSnapshots])
 
   // スナップショットを復元
   const handleRestoreSnapshot = useCallback(
@@ -886,7 +871,7 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   // 吹き出しが表示されているマーカーのIDリスト
   const activeMarkerIds = Object.keys(activeInfoWindows)
 
-  // 表示されている吹き出しの数
+  // 表示されている吹き出しの数（正確に計算）
   const activeInfoWindowCount = activeMarkerIds.length
 
   // APIキーがロード中の場合はローディングメッセージを表示
@@ -1017,7 +1002,7 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
         </div>
         <CloseAllButton onCloseAll={handleCloseAllInfoWindows} disabled={activeInfoWindowCount === 0} />
         <SnapshotButton
-          onSnapshot={handleSaveSnapshot}
+          onSnapshot={handleSnapshotStateUpdate}
           disabled={activeInfoWindowCount === 0}
           activeCount={activeInfoWindowCount}
         />

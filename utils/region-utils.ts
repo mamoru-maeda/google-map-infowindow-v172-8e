@@ -379,13 +379,83 @@ export function adjustPositionToAvoidOverlap(
 }
 
 /**
- * 辺配置用の位置を計算する（座標ベース配置強化版）
+ * マーカーの位置に基づいて最適な辺を決定する（線の交差を最小化）
+ */
+function determineOptimalEdge(
+  markerLat: number,
+  markerLng: number,
+  mapBounds: any,
+  mapCenter: { lat: number; lng: number },
+  existingLines: LineInfo[],
+): MapEdge {
+  // 各辺への距離を計算
+  const distanceToNorth = Math.abs(markerLat - mapBounds.north)
+  const distanceToSouth = Math.abs(markerLat - mapBounds.south)
+  const distanceToEast = Math.abs(markerLng - mapBounds.east)
+  const distanceToWest = Math.abs(markerLng - mapBounds.west)
+
+  // 基本的な辺の候補を距離順にソート
+  const edgeCandidates: Array<{ edge: MapEdge; distance: number }> = [
+    { edge: "north", distance: distanceToNorth },
+    { edge: "south", distance: distanceToSouth },
+    { edge: "east", distance: distanceToEast },
+    { edge: "west", distance: distanceToWest },
+  ].sort((a, b) => a.distance - b.distance)
+
+  // 各辺候補について線の交差数をチェック
+  for (const candidate of edgeCandidates) {
+    // 仮の吹き出し位置を計算
+    let testInfoWindowLat: number
+    let testInfoWindowLng: number
+
+    switch (candidate.edge) {
+      case "north":
+        testInfoWindowLat = mapBounds.north - 0.01 // 仮の位置
+        testInfoWindowLng = markerLng
+        break
+      case "south":
+        testInfoWindowLat = mapBounds.south + 0.01
+        testInfoWindowLng = markerLng
+        break
+      case "east":
+        testInfoWindowLat = markerLat
+        testInfoWindowLng = mapBounds.east - 0.01
+        break
+      case "west":
+        testInfoWindowLat = markerLat
+        testInfoWindowLng = mapBounds.west + 0.01
+        break
+    }
+
+    // この配置での線の交差数をチェック
+    const testLine: LineInfo = {
+      id: "test",
+      markerPos: { lat: markerLat, lng: markerLng },
+      infoWindowPos: { lat: testInfoWindowLat, lng: testInfoWindowLng },
+    }
+
+    const intersections = checkLineIntersections(testLine.markerPos, testLine.infoWindowPos, existingLines)
+
+    // 交差がない、または最小の場合はこの辺を選択
+    if (!intersections.hasIntersection) {
+      console.log(`📍 最適辺選択: ${candidate.edge} (交差なし)`)
+      return candidate.edge
+    }
+  }
+
+  // すべての辺で交差がある場合は、最も近い辺を選択
+  console.log(`📍 最適辺選択: ${edgeCandidates[0].edge} (最短距離)`)
+  return edgeCandidates[0].edge
+}
+
+/**
+ * 辺配置用の位置を計算する（線の交差を最小化する強化版）
  */
 export function getEdgeAlignedPositions(
   activeInfoWindows: Record<string, InfoWindowState>,
   map: any,
 ): Record<string, { lat: number; lng: number }> {
-  console.log("🔧 座標ベース辺配置位置計算を開始します")
+  console.log("🔧 線の交差を最小化する辺配置位置計算を開始します")
 
   const mapBounds = getMapBounds(map)
   if (!mapBounds) {
@@ -409,86 +479,54 @@ export function getEdgeAlignedPositions(
 
   console.log(`📏 地図サイズ: ${mapWidth}×${mapHeight}px`)
   console.log(`📏 地図中心: (${mapCenter.lat.toFixed(6)}, ${mapCenter.lng.toFixed(6)})`)
-  console.log(
-    `📏 地図境界: N=${mapBounds.north.toFixed(6)}, S=${mapBounds.south.toFixed(6)}, E=${mapBounds.east.toFixed(6)}, W=${mapBounds.west.toFixed(6)}`,
-  )
 
   const infoWindowEntries = Object.entries(activeInfoWindows)
   const positions: Record<string, { lat: number; lng: number }> = {}
+  const processedLines: LineInfo[] = []
 
   console.log(`📍 処理対象: ${infoWindowEntries.length}個の吹き出し`)
 
-  // 各マーカーを座標に基づいて辺に分類
-  const edgeGroups: Record<MapEdge, Array<{ markerId: string; infoWindow: InfoWindowState; distance: number }>> = {
+  // 各マーカーをマーカー位置に基づいて最適な辺に配置
+  const edgeGroups: Record<
+    MapEdge,
+    Array<{ markerId: string; infoWindow: InfoWindowState; markerPos: { lat: number; lng: number } }>
+  > = {
     north: [],
     south: [],
     east: [],
     west: [],
   }
 
-  // 各マーカーの位置を分析して適切な辺を決定
+  // 各マーカーの最適な辺を決定（線の交差を考慮）
   infoWindowEntries.forEach(([markerId, infoWindow]) => {
     const markerLat = infoWindow.position.lat
     const markerLng = infoWindow.position.lng
 
-    // 地図の中心からの相対位置を計算
-    const latFromCenter = markerLat - mapCenter.lat
-    const lngFromCenter = markerLng - mapCenter.lng
+    // 線の交差を考慮して最適な辺を決定
+    const optimalEdge = determineOptimalEdge(markerLat, markerLng, mapBounds, mapCenter, processedLines)
 
-    // 各辺からの距離を計算
-    const distanceToNorth = Math.abs(markerLat - mapBounds.north)
-    const distanceToSouth = Math.abs(markerLat - mapBounds.south)
-    const distanceToEast = Math.abs(markerLng - mapBounds.east)
-    const distanceToWest = Math.abs(markerLng - mapBounds.west)
-
-    // 座標ベースでの辺判定（地図を4つの領域に分割）
-    let assignedEdge: MapEdge
-
-    // 縦横の距離比較で主要な方向を決定
-    const latDistance = Math.min(distanceToNorth, distanceToSouth)
-    const lngDistance = Math.min(distanceToEast, distanceToWest)
-
-    if (latDistance < lngDistance) {
-      // 上下の辺に近い場合
-      if (markerLat > mapCenter.lat) {
-        assignedEdge = "north" // 地図の上半分にあるマーカーは上辺に
-      } else {
-        assignedEdge = "south" // 地図の下半分にあるマーカーは下辺に
-      }
-    } else {
-      // 左右の辺に近い場合
-      if (markerLng > mapCenter.lng) {
-        assignedEdge = "east" // 地図の右半分にあるマーカーは右辺に
-      } else {
-        assignedEdge = "west" // 地図の左半分にあるマーカーは左辺に
-      }
-    }
-
-    // 距離情報と共に辺グループに追加
-    const distanceToAssignedEdge =
-      assignedEdge === "north"
-        ? distanceToNorth
-        : assignedEdge === "south"
-          ? distanceToSouth
-          : assignedEdge === "east"
-            ? distanceToEast
-            : distanceToWest
-
-    edgeGroups[assignedEdge].push({
+    edgeGroups[optimalEdge].push({
       markerId,
       infoWindow,
-      distance: distanceToAssignedEdge,
+      markerPos: { lat: markerLat, lng: markerLng },
     })
 
     console.log(
-      `📍 ${markerId}: マーカー位置(${markerLat.toFixed(6)}, ${markerLng.toFixed(6)}) → ${assignedEdge}辺に配置予定`,
+      `📍 ${markerId}: マーカー位置(${markerLat.toFixed(6)}, ${markerLng.toFixed(6)}) → ${optimalEdge}辺に配置予定`,
     )
   })
 
-  // 各辺のグループ内で距離順にソート（近い順）
+  // 各辺のグループ内でマーカーの位置に基づいてソート
   Object.keys(edgeGroups).forEach((edge) => {
-    edgeGroups[edge as MapEdge].sort((a, b) => a.distance - b.distance)
-    console.log(`📊 ${edge}辺: ${edgeGroups[edge as MapEdge].length}個の吹き出し`)
+    const edgeKey = edge as MapEdge
+    if (edgeKey === "north" || edgeKey === "south") {
+      // 上下の辺では経度順にソート
+      edgeGroups[edgeKey].sort((a, b) => a.markerPos.lng - b.markerPos.lng)
+    } else {
+      // 左右の辺では緯度順にソート
+      edgeGroups[edgeKey].sort((a, b) => b.markerPos.lat - a.markerPos.lat) // 北から南へ
+    }
+    console.log(`📊 ${edge}辺: ${edgeGroups[edgeKey].length}個の吹き出し`)
   })
 
   // 各辺に配置（10px内側に配置）
@@ -509,10 +547,10 @@ export function getEdgeAlignedPositions(
           // 上辺から10px内側に配置
           targetLat = mapBounds.north - EDGE_MARGIN * pixelToLatRatio - (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio
           if (totalItemsOnEdge === 1) {
-            // 1個の場合は中央に配置
-            targetLng = mapCenter.lng
+            // 1個の場合はマーカーの経度に合わせる
+            targetLng = item.markerPos.lng
           } else {
-            // 複数の場合は等間隔で配置（左右10px内側）
+            // 複数の場合はマーカーの経度分布に基づいて配置
             const startLng = mapBounds.west + (INFOWINDOW_WIDTH / 2) * pixelToLngRatio + EDGE_MARGIN * pixelToLngRatio
             const endLng = mapBounds.east - (INFOWINDOW_WIDTH / 2) * pixelToLngRatio - EDGE_MARGIN * pixelToLngRatio
             targetLng = startLng + (endLng - startLng) * positionRatio
@@ -523,9 +561,8 @@ export function getEdgeAlignedPositions(
           // 下辺から10px内側に配置
           targetLat = mapBounds.south + EDGE_MARGIN * pixelToLatRatio + (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio
           if (totalItemsOnEdge === 1) {
-            targetLng = mapCenter.lng
+            targetLng = item.markerPos.lng
           } else {
-            // 複数の場合は等間隔で配置（左右10px内側）
             const startLng = mapBounds.west + (INFOWINDOW_WIDTH / 2) * pixelToLngRatio + EDGE_MARGIN * pixelToLngRatio
             const endLng = mapBounds.east - (INFOWINDOW_WIDTH / 2) * pixelToLngRatio - EDGE_MARGIN * pixelToLngRatio
             targetLng = startLng + (endLng - startLng) * positionRatio
@@ -536,9 +573,8 @@ export function getEdgeAlignedPositions(
           // 右辺から10px内側に配置
           targetLng = mapBounds.east - EDGE_MARGIN * pixelToLngRatio - (INFOWINDOW_WIDTH / 2) * pixelToLngRatio
           if (totalItemsOnEdge === 1) {
-            targetLat = mapCenter.lat
+            targetLat = item.markerPos.lat
           } else {
-            // 複数の場合は等間隔で配置（上下10px内側）
             const startLat = mapBounds.south + (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio + EDGE_MARGIN * pixelToLatRatio
             const endLat = mapBounds.north - (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio - EDGE_MARGIN * pixelToLatRatio
             targetLat = startLat + (endLat - startLat) * positionRatio
@@ -549,9 +585,8 @@ export function getEdgeAlignedPositions(
           // 左辺から10px内側に配置
           targetLng = mapBounds.west + EDGE_MARGIN * pixelToLngRatio + (INFOWINDOW_WIDTH / 2) * pixelToLngRatio
           if (totalItemsOnEdge === 1) {
-            targetLat = mapCenter.lat
+            targetLat = item.markerPos.lat
           } else {
-            // 複数の場合は等間隔で配置（上下10px内側）
             const startLat = mapBounds.south + (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio + EDGE_MARGIN * pixelToLatRatio
             const endLat = mapBounds.north - (INFOWINDOW_HEIGHT / 2) * pixelToLatRatio - EDGE_MARGIN * pixelToLatRatio
             targetLat = startLat + (endLat - startLat) * positionRatio
@@ -561,13 +596,24 @@ export function getEdgeAlignedPositions(
 
       positions[item.markerId] = { lat: targetLat, lng: targetLng }
 
+      // 処理済みの線として記録
+      processedLines.push({
+        id: item.markerId,
+        markerPos: item.markerPos,
+        infoWindowPos: { lat: targetLat, lng: targetLng },
+      })
+
       console.log(
         `✅ ${item.markerId} を${edgeKey}辺の${index + 1}/${totalItemsOnEdge}番目に配置: (${targetLat.toFixed(6)}, ${targetLng.toFixed(6)})`,
       )
     })
   })
 
-  console.log("🎉 座標ベース辺配置が完了しました")
+  // 最終的な線の交差数を計算
+  const finalCrossings = calculateLineCrossings(processedLines)
+  console.log(`📊 最終的な線の交差数: ${finalCrossings}個`)
+
+  console.log("🎉 線の交差を最小化する辺配置が完了しました")
   return positions
 }
 

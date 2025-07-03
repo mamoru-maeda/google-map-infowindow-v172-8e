@@ -7,7 +7,7 @@ import { useToast } from "@/components/ui/use-toast"
 import { localStorageUtils } from "@/lib/utils"
 
 interface SnapshotButtonProps {
-  activeCount?: number
+  activeCount: number
   onSnapshot?: () => void
   disabled?: boolean
 }
@@ -15,26 +15,22 @@ interface SnapshotButtonProps {
 const SNAPSHOT_STORAGE_KEY = "google-map-snapshots-v1"
 const INFOWINDOW_STORAGE_KEY = "google-map-infowindows-v14"
 
-const SnapshotButton: React.FC<SnapshotButtonProps> = ({ activeCount = 0, onSnapshot, disabled = false }) => {
+const SnapshotButton: React.FC<SnapshotButtonProps> = ({ activeCount, onSnapshot, disabled = false }) => {
   const { toast } = useToast()
 
   const handleSnapshot = () => {
-    // 現在の吹き出し状態をローカルストレージから取得
+    // 現在の吹き出し状態をローカルストレージから取得（保存用）
     const currentInfoWindows = localStorageUtils.loadData(INFOWINDOW_STORAGE_KEY, {})
-    const infoWindowEntries = Object.entries(currentInfoWindows)
 
-    // 有効な吹き出しのみをカウント
-    const validInfoWindows = infoWindowEntries.filter(([id, infoWindow]: [string, any]) => {
-      return (
-        infoWindow &&
-        infoWindow.position &&
-        typeof infoWindow.position.lat === "number" &&
-        typeof infoWindow.position.lng === "number"
-      )
-    })
+    // 吹き出しの個数を初期化してから再カウント
+    let actualCount = 0
 
-    const actualCount = validInfoWindows.length
+    // ローカルストレージから取得した吹き出し情報を基に実際の個数をカウント
+    if (currentInfoWindows && typeof currentInfoWindows === "object") {
+      actualCount = Object.keys(currentInfoWindows).length
+    }
 
+    // 初期化後の実際の個数が0の場合は保存しない
     if (actualCount === 0) {
       toast({
         title: "保存できません",
@@ -54,14 +50,11 @@ const SnapshotButton: React.FC<SnapshotButtonProps> = ({ activeCount = 0, onSnap
       second: "2-digit",
     })
 
-    // 有効な吹き出しのみを保存
-    const validInfoWindowsObject = Object.fromEntries(validInfoWindows)
-
     const snapshot = {
       id: `snapshot_${Date.now()}`,
       name: timestamp,
       timestamp: Date.now(),
-      infoWindows: validInfoWindowsObject,
+      infoWindows: currentInfoWindows,
     }
 
     // 既存のスナップショットを読み込み
@@ -79,7 +72,7 @@ const SnapshotButton: React.FC<SnapshotButtonProps> = ({ activeCount = 0, onSnap
     console.log(`📸 スナップショット保存: ${actualCount}個の吹き出し`)
     console.log("保存されたスナップショット詳細:", snapshot)
 
-    // onSnapshotコールバックがある場合は実行（重複保存を避けるため、ここでは状態更新のみ）
+    // onSnapshotコールバックがある場合は実行
     if (onSnapshot) {
       onSnapshot()
     }

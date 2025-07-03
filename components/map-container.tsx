@@ -71,6 +71,13 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
   const [initAttempts, setInitAttempts] = useState(0)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
 
+  // 実際に画面に表示される吹き出しの個数を正確に計算
+  const activeInfoWindowCount = Object.entries(activeInfoWindows).filter(([markerId, infoWindow]) => {
+    // activeInfoWindowsに存在し、かつ対応するマーカーが存在し、そのカテゴリーが選択されている場合のみカウント
+    const marker = markers.find((m) => m.id === markerId)
+    return marker && selectedCategories.includes(marker.category)
+  }).length
+
   console.log(`🎯 最大吹き出し数: ${MAX_INFOWINDOWS}個`)
   console.log(`📊 現在の吹き出し数: ${Object.keys(activeInfoWindows).length}個`)
 
@@ -870,9 +877,6 @@ const MapContainer: React.FC<MapContainerProps> = ({ center, zoom, markers, cate
 
   // 吹き出しが表示されているマーカーのIDリスト
   const activeMarkerIds = Object.keys(activeInfoWindows)
-
-  // 表示されている吹き出しの数（正確に計算）
-  const activeInfoWindowCount = activeMarkerIds.length
 
   // APIキーがロード中の場合はローディングメッセージを表示
   if (isLoadingApiKey) {
